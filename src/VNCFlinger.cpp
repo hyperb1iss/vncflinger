@@ -57,10 +57,6 @@ status_t VNCFlinger::setup_l() {
 
     sQueue->addListener(this);
 
-    mVirtualDisplay = new VirtualDisplay();
-
-    mVNCBuf = new uint8_t[mWidth * mHeight * 4];
-
     rfbLog = VNCFlinger::rfbLogger;
     rfbErr = VNCFlinger::rfbLogger;
 
@@ -71,8 +67,9 @@ status_t VNCFlinger::setup_l() {
         return NO_INIT;
     }
 
+    mVNCBuf = new uint8_t[mWidth * mHeight * 4];
+    mVNCScreen->frameBuffer = (char *) mVNCBuf;
     mVNCScreen->desktopName = "VNCFlinger";
-    mVNCScreen->frameBuffer = (char *)mVNCBuf;
     mVNCScreen->alwaysShared = TRUE;
     mVNCScreen->httpDir = NULL;
     mVNCScreen->port = VNC_PORT;
@@ -80,12 +77,15 @@ status_t VNCFlinger::setup_l() {
     mVNCScreen->serverFormat.trueColour = true;
     mVNCScreen->serverFormat.bitsPerPixel = 32;
     mVNCScreen->handleEventsEagerly = true;
-    mVNCScreen->deferUpdateTime = 5;
+    mVNCScreen->deferUpdateTime = 16;
 
     rfbInitServer(mVNCScreen);
 
     /* Mark as dirty since we haven't sent any updates at all yet. */
     rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
+
+
+    mVirtualDisplay = new VirtualDisplay(mVNCScreen);
 
     return err;
 }
@@ -129,11 +129,21 @@ void VNCFlinger::onEvent(const Event& event) {
             ALOGI("Client disconnected (%zu)", mClientCount);
             break;
 
+        /*
         case EVENT_BUFFER_READY:
+            int64_t startWhenNsec, endWhenNsec;
+            startWhenNsec = systemTime(CLOCK_MONOTONIC);
+            if (event.mData == NULL) {
+                break;
+            }
+            //memcpy(mVNCBuf, (uint8_t *) event.mData, mWidth * mHeight * 4);
             //mVNCScreen->frameBuffer = (char *) event.mData;
-            memcpy(mVNCBuf, (uint8_t *) event.mData, mWidth * mHeight * 4);
             rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
+            endWhenNsec = systemTime(CLOCK_MONOTONIC);
+            ALOGV("got pixels (mark=%.3fms)",
+                    (endWhenNsec - startWhenNsec) / 1000000.0);
             break;
+        */
 
         default:
             ALOGE("Unhandled event: %d", event.mId);

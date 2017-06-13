@@ -23,9 +23,9 @@
 
 #include <gui/SurfaceComposerClient.h>
 
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
 #include <GLES3/gl3.h>
+#include <GLES3/gl3ext.h>
+#include <GLES2/gl2ext.h>
 
 #include <ui/Rect.h>
 
@@ -186,8 +186,9 @@ bool VirtualDisplay::threadLoop() {
         mEventCond.wait(mMutex);
         ALOGD("Awake, frame available");
         void* ptr = processFrame_l();
-        const Event ev(EVENT_BUFFER_READY, ptr);
-        mQueue->enqueue(ev);
+
+        //const Event ev(EVENT_BUFFER_READY, ptr);
+        //mQueue->enqueue(ev);
     }
 
     ALOGV("VDS thread stopping");
@@ -223,7 +224,7 @@ status_t VirtualDisplay::setup_l() {
     }
 
     mBufSize = mWidth * mHeight * kGlBytesPerPixel;
-    
+
     // pixel buffer for image copy
     mPBO = new GLuint[NUM_PBO];
     glGenBuffers(NUM_PBO, mPBO);
@@ -256,12 +257,17 @@ void* VirtualDisplay::processFrame_l() {
     mGlConsumer->updateTexImage();
     mGlConsumer->getTransformMatrix(texMatrix);
 
+    int64_t startWhen, blitWhen, readWhen, mapWhen, memcpyWhen, markWhen;
+    startWhen = systemTime(CLOCK_MONOTONIC);
+
     // The data is in an external texture, so we need to render it to the
     // pbuffer to get access to RGB pixel data.  We also want to flip it
     // upside-down for easy conversion to a bitmap.
     int width = mEglWindow.getWidth();
     int height = mEglWindow.getHeight();
     mExtTexProgram.blit(mExtTextureName, texMatrix, 0, 0, mWidth, mHeight, true);
+
+    blitWhen = systemTime(CLOCK_MONOTONIC);
 
     GLenum glErr;
     glBindBuffer(GL_PIXEL_PACK_BUFFER, mPBO[mIndex]);
@@ -271,13 +277,28 @@ void* VirtualDisplay::processFrame_l() {
         return NULL;
     }
 
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, mPBO[mIndex]);
+    readWhen = systemTime(CLOCK_MONOTONIC);
+
     void* ptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, mBufSize, GL_MAP_READ_BIT);
+    mapWhen = systemTime(CLOCK_MONOTONIC);
+    //memcpy(mVNCScreen->frameBuffer, ptr, mBufSize);
+    mVNCScreen->frameBuffer = (char *)ptr;
+    memcpyWhen = systemTime(CLOCK_MONOTONIC);
+    rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
+    markWhen = systemTime(CLOCK_MONOTONIC);
+
     glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
-    mIndex = (mIndex + 1) % NUM_PBO; 
-    return ptr;
+    ALOGV("processFrame: blit=%.3fms read=%.3fms map=%.3fms memcpy=%.3fms mark=%.3fms",
+            (blitWhen - startWhen) / 1000000.0,
+            (readWhen - blitWhen) / 1000000.0,
+            (mapWhen - readWhen) / 1000000.0,
+            (memcpyWhen - mapWhen) / 1000000.0,
+            (markWhen - memcpyWhen) / 1000000.0);
+
+    mIndex = (mIndex + 1) % NUM_PBO;
+    return mVNCScreen->frameBuffer;
 }
 
 void VirtualDisplay::release_l() {

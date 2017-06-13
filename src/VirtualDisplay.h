@@ -27,6 +27,7 @@
 #include <ui/DisplayInfo.h>
 #include <utils/Thread.h>
 
+#include <rfb/rfb.h>
 
 #define NUM_PBO 2
 
@@ -37,7 +38,8 @@ namespace android {
  */
 class VirtualDisplay : public GLConsumer::FrameAvailableListener, Thread {
 public:
-    VirtualDisplay() : Thread(false),
+    VirtualDisplay(rfbScreenInfoPtr vncScreen) : Thread(false),
+        mVNCScreen(vncScreen),
         mThreadResult(UNKNOWN_ERROR),
         mState(UNINITIALIZED),
         mIndex(0)
@@ -46,9 +48,9 @@ public:
     // Create an "input surface", similar in purpose to a MediaCodec input
     // surface, that the virtual display can send buffers to.  Also configures
     // EGL with a pbuffer surface on the current thread.
-    status_t start(const DisplayInfo& mainDpyInfo, EventQueue *queue);
+    virtual status_t start(const DisplayInfo& mainDpyInfo, EventQueue *queue);
 
-    status_t stop();
+    virtual status_t stop();
 
     static bool isDeviceRotated(int orientation);
 
@@ -78,6 +80,8 @@ private:
 
     // Process a frame received from the virtual display.
     void* processFrame_l();
+
+    rfbScreenInfoPtr mVNCScreen;
 
     uint32_t mHeight, mWidth;
     bool mRotate;
@@ -119,6 +123,7 @@ private:
 
     // Pixel data buffers.
     size_t mBufSize;
+    uint8_t* mPixelBuf;
     GLuint* mPBO;
     unsigned int mIndex;
 
