@@ -20,7 +20,7 @@
 #include <utils/Errors.h>
 
 #include <EGL/egl.h>
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
 
 namespace android {
 

@@ -27,7 +27,7 @@ LOCAL_SHARED_LIBRARIES := \
     libutils \
     libz \
     libEGL \
-    libGLESv2
+    libGLESv3
 
 LOCAL_STATIC_LIBRARIES += \
     libvncserver

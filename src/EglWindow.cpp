@@ -142,7 +142,7 @@ status_t EglWindow::eglSetupContext(bool forPbuffer) {
     }
 
     EGLint contextAttribs[] = {
-        EGL_CONTEXT_CLIENT_VERSION, 2,
+        EGL_CONTEXT_CLIENT_VERSION, 3,
         EGL_NONE
     };
     mEglContext = eglCreateContext(mEglDisplay, mEglConfig, EGL_NO_CONTEXT,
