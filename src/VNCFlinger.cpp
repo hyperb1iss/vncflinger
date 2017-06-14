@@ -14,6 +14,8 @@
 
 using namespace android;
 
+Mutex VNCFlinger::sUpdateMutex;
+
 status_t VNCFlinger::start() {
     Mutex::Autolock _l(mMutex);
 
@@ -74,19 +76,20 @@ status_t VNCFlinger::setup_l() {
     mVNCScreen->newClientHook = (rfbNewClientHookPtr) VNCFlinger::onNewClient;
     mVNCScreen->kbdAddEvent = InputDevice::keyEvent;
     mVNCScreen->ptrAddEvent = InputDevice::pointerEvent;
+    mVNCScreen->displayHook = (rfbDisplayHookPtr) VNCFlinger::onFrameStart;
+    mVNCScreen->displayFinishedHook = (rfbDisplayFinishedHookPtr) VNCFlinger::onFrameDone;
     mVNCScreen->serverFormat.trueColour = true;
     mVNCScreen->serverFormat.bitsPerPixel = 32;
     mVNCScreen->handleEventsEagerly = true;
-    mVNCScreen->deferUpdateTime = 16;
+    mVNCScreen->deferUpdateTime = 0;
     mVNCScreen->screenData = this;
-
     rfbInitServer(mVNCScreen);
 
     /* Mark as dirty since we haven't sent any updates at all yet. */
     rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
 
 
-    mVirtualDisplay = new VirtualDisplay(mVNCScreen);
+    mVirtualDisplay = new VirtualDisplay(mVNCScreen, &sUpdateMutex);
 
     return err;
 }
@@ -145,6 +148,23 @@ enum rfbNewClientAction VNCFlinger::onNewClient(rfbClientPtr cl) {
     VNCFlinger *vf = (VNCFlinger *)cl->screen->screenData;
     vf->addClient();
     return RFB_CLIENT_ACCEPT;
+}
+
+void VNCFlinger::onFrameStart(rfbClientPtr /* cl */) {
+    sUpdateMutex.lock();
+    ALOGV("frame start");
+}
+
+void VNCFlinger::onFrameDone(rfbClientPtr /* cl */, int status) {
+    sUpdateMutex.unlock();
+    ALOGV("frame done! %d", status);
+}
+
+void VNCFlinger::markFrame(void* frame, size_t stride) {
+    Mutex::Autolock _l(sUpdateMutex);
+    mVNCScreen->frameBuffer = (char *)frame;
+    mVNCScreen->paddedWidthInBytes = stride * 4;
+    rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
 }
 
 void VNCFlinger::rfbLogger(const char *format, ...) {

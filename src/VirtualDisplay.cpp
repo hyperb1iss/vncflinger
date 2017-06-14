@@ -106,10 +106,10 @@ status_t VirtualDisplay::setDisplayProjection(const sp<IBinder>& dpy,
     Rect displayRect(offX, offY, offX + outWidth, offY + outHeight);
 
     if (mRotate) {
-        printf("Rotated content area is %ux%u at offset x=%d y=%d\n",
+        ALOGV("Rotated content area is %ux%u at offset x=%d y=%d\n",
                 outHeight, outWidth, offY, offX);
     } else {
-        printf("Content area is %ux%u at offset x=%d y=%d\n",
+        ALOGV("Content area is %ux%u at offset x=%d y=%d\n",
                 outWidth, outHeight, offX, offY);
     }
 
@@ -123,6 +123,7 @@ status_t VirtualDisplay::start(const DisplayInfo& mainDpyInfo) {
 
     Mutex::Autolock _l(mMutex);
 
+    ALOGV("Orientation: %d", mainDpyInfo.orientation);
     mRotate = isDeviceRotated(mainDpyInfo.orientation);
     mWidth = mRotate ? mainDpyInfo.h : mainDpyInfo.w;
     mHeight = mRotate ? mainDpyInfo.w : mainDpyInfo.h;
@@ -195,51 +196,14 @@ bool VirtualDisplay::threadLoop() {
 status_t VirtualDisplay::setup_l() {
     status_t err;
 
-    err = mEglWindow.createPbuffer(mWidth, mHeight);
-    if (err != NO_ERROR) {
-        return err;
-    }
-    mEglWindow.makeCurrent();
-
-    glViewport(0, 0, mWidth, mHeight);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-
-    // Shader for rendering the external texture.
-    err = mExtTexProgram.setup(Program::PROGRAM_EXTERNAL_TEXTURE);
-    if (err != NO_ERROR) {
-        return err;
-    }
-
-    // Input side (buffers from virtual display).
-    glGenTextures(1, &mExtTextureName);
-    if (mExtTextureName == 0) {
-        ALOGE("glGenTextures failed: %#x", glGetError());
-        return UNKNOWN_ERROR;
-    }
-
-    mBufSize = mWidth * mHeight * kGlBytesPerPixel;
-
-    // pixel buffer for image copy
-    mPBO = new GLuint[NUM_PBO];
-    glGenBuffers(NUM_PBO, mPBO);
-
-    for (unsigned int i = 0; i < NUM_PBO; i++) {
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, mPBO[i]);
-        glBufferData(GL_PIXEL_PACK_BUFFER, mBufSize, 0, GL_DYNAMIC_READ);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-    }
-
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&mProducer, &consumer);
-    mGlConsumer = new GLConsumer(consumer, mExtTextureName,
-                GL_TEXTURE_EXTERNAL_OES, true, false);
-    mGlConsumer->setName(String8("virtual display"));
-    mGlConsumer->setDefaultBufferSize(mWidth, mHeight);
+    mCpuConsumer = new CpuConsumer(consumer, 1);
+    mCpuConsumer->setName(String8("vds-to-cpu"));
+    mCpuConsumer->setDefaultBufferSize(mWidth, mHeight);
     mProducer->setMaxDequeuedBufferCount(4);
-    mGlConsumer->setConsumerUsageBits(GRALLOC_USAGE_HW_TEXTURE);
 
-    mGlConsumer->setFrameAvailableListener(this);
+    mCpuConsumer->setFrameAvailableListener(this);
 
     ALOGD("VirtualDisplay::setup_l OK");
     return NO_ERROR;
@@ -248,60 +212,42 @@ status_t VirtualDisplay::setup_l() {
 void* VirtualDisplay::processFrame_l() {
     ALOGD("processFrame_l\n");
 
-    float texMatrix[16];
-    mGlConsumer->updateTexImage();
-    mGlConsumer->getTransformMatrix(texMatrix);
+    mUpdateMutex->lock();
 
-    int64_t startWhen, blitWhen, readWhen, mapWhen, memcpyWhen, markWhen;
-    startWhen = systemTime(CLOCK_MONOTONIC);
-
-    // The data is in an external texture, so we need to render it to the
-    // pbuffer to get access to RGB pixel data.  We also want to flip it
-    // upside-down for easy conversion to a bitmap.
-    int width = mEglWindow.getWidth();
-    int height = mEglWindow.getHeight();
-    mExtTexProgram.blit(mExtTextureName, texMatrix, 0, 0, mWidth, mHeight, true);
-
-    blitWhen = systemTime(CLOCK_MONOTONIC);
-
-    GLenum glErr;
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, mPBO[mIndex]);
-    glReadPixels(0, 0, mWidth, mHeight, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-    if ((glErr = glGetError()) != GL_NO_ERROR) {
-        ALOGE("glReadPixels failed: %#x", glErr);
-        return NULL;
+    CpuConsumer::LockedBuffer imgBuffer;
+    status_t res = mCpuConsumer->lockNextBuffer(&imgBuffer);
+    if (res != OK) {
+        ALOGE("Failed to lock next buffer: %s (%d)", strerror(-res), res);
+        return nullptr;
     }
 
-    readWhen = systemTime(CLOCK_MONOTONIC);
+    ALOGV("imgBuffer ptr: %p format: %x (%dx%d, stride=%d)", imgBuffer.data, imgBuffer.format, imgBuffer.width, imgBuffer.height, imgBuffer.stride);
 
-    void* ptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, mBufSize, GL_MAP_READ_BIT);
-    mapWhen = systemTime(CLOCK_MONOTONIC);
-    //memcpy(mVNCScreen->frameBuffer, ptr, mBufSize);
-    mVNCScreen->frameBuffer = (char *)ptr;
-    memcpyWhen = systemTime(CLOCK_MONOTONIC);
+    void* vncbuf = mVNCScreen->frameBuffer;
+    void* imgbuf = imgBuffer.data;
+
+    for (size_t y = 0; y < mHeight; y++) {
+        memcpy(vncbuf, imgbuf, mWidth * 4);
+        vncbuf = (void *)((char *)vncbuf + mWidth * 4);
+        imgbuf = (void *)((char *)imgbuf + imgBuffer.stride * 4);
+    }
+    ALOGD("buf copied");
+    
+    mVNCScreen->frameBuffer = (char *)imgBuffer.data;
+    mVNCScreen->paddedWidthInBytes = imgBuffer.stride * 4;
     rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
-    markWhen = systemTime(CLOCK_MONOTONIC);
 
-    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
-    ALOGV("processFrame: blit=%.3fms read=%.3fms map=%.3fms memcpy=%.3fms mark=%.3fms",
-            (blitWhen - startWhen) / 1000000.0,
-            (readWhen - blitWhen) / 1000000.0,
-            (mapWhen - readWhen) / 1000000.0,
-            (memcpyWhen - mapWhen) / 1000000.0,
-            (markWhen - memcpyWhen) / 1000000.0);
+    mCpuConsumer->unlockBuffer(imgBuffer);
+    mUpdateMutex->unlock();
 
-    mIndex = (mIndex + 1) % NUM_PBO;
-    return mVNCScreen->frameBuffer;
+    return nullptr;
 }
 
 void VirtualDisplay::release_l() {
     ALOGD("release_l");
-    mGlConsumer.clear();
+    mCpuConsumer.clear();
     mProducer.clear();
-    mExtTexProgram.release();
-    mEglWindow.release();
     SurfaceComposerClient::destroyDisplay(mDpy);
 }
 

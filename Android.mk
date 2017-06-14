@@ -3,9 +3,7 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := \
-    src/EglWindow.cpp \
     src/InputDevice.cpp \
-    src/Program.cpp \
     src/VirtualDisplay.cpp \
     src/VNCFlinger.cpp \
     src/main.cpp
@@ -25,14 +23,12 @@ LOCAL_SHARED_LIBRARIES := \
     libssl \
     libui \
     libutils \
-    libz \
-    libEGL \
-    libGLESv3
+    libz
 
 LOCAL_STATIC_LIBRARIES += \
     libvncserver
 
-LOCAL_CFLAGS := -Ofast -Werror 
+LOCAL_CFLAGS := -Ofast -Werror -std=c++11
 LOCAL_CFLAGS += -DLOG_NDEBUG=0
 
 #LOCAL_CXX := /usr/bin/include-what-you-use

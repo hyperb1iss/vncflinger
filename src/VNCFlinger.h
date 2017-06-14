@@ -27,6 +27,8 @@ public:
     virtual size_t addClient();
     virtual size_t removeClient();
 
+    virtual void markFrame(void* frame, size_t stride);
+
 private:
 
     virtual status_t setup_l();
@@ -34,6 +36,8 @@ private:
 
     static ClientGoneHookPtr onClientGone(rfbClientPtr cl);
     static enum rfbNewClientAction onNewClient(rfbClientPtr cl);
+    static void onFrameStart(rfbClientPtr cl);
+    static void onFrameDone(rfbClientPtr cl, int result);
     static void rfbLogger(const char *format, ...);
 
     Condition mCondition;
@@ -48,6 +52,7 @@ private:
     DisplayInfo mMainDpyInfo;
     
     Mutex mMutex;
+    static Mutex sUpdateMutex;
 
     sp<VirtualDisplay> mVirtualDisplay;
 

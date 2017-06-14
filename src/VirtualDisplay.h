@@ -17,11 +17,8 @@
 #ifndef VDS_H
 #define VDS_H
 
-#include "Program.h"
-#include "EglWindow.h"
-
 #include <gui/BufferQueue.h>
-#include <gui/GLConsumer.h>
+#include <gui/CpuConsumer.h>
 #include <gui/IGraphicBufferProducer.h>
 #include <ui/DisplayInfo.h>
 #include <utils/Thread.h>
@@ -35,13 +32,13 @@ namespace android {
 /*
  * Support for "frames" output format.
  */
-class VirtualDisplay : public GLConsumer::FrameAvailableListener, Thread {
+class VirtualDisplay : public CpuConsumer::FrameAvailableListener, Thread {
 public:
-    VirtualDisplay(rfbScreenInfoPtr vncScreen) : Thread(false),
+    VirtualDisplay(rfbScreenInfoPtr vncScreen, Mutex *updateMutex) : Thread(false),
         mVNCScreen(vncScreen),
+        mUpdateMutex(updateMutex),
         mThreadResult(UNKNOWN_ERROR),
-        mState(UNINITIALIZED),
-        mIndex(0)
+        mState(UNINITIALIZED)
         {}
 
     // Create an "input surface", similar in purpose to a MediaCodec input
@@ -81,6 +78,7 @@ private:
     void* processFrame_l();
 
     rfbScreenInfoPtr mVNCScreen;
+    Mutex *mUpdateMutex;
 
     uint32_t mHeight, mWidth;
     bool mRotate;
@@ -107,22 +105,7 @@ private:
     sp<IGraphicBufferProducer> mProducer;
 
     // This receives frames from the virtual display and makes them available
-    // as an external texture.
-    sp<GLConsumer> mGlConsumer;
-
-    // EGL display / context / surface.
-    EglWindow mEglWindow;
-
-    // GL rendering support.
-    Program mExtTexProgram;
-
-    // External texture, updated by GLConsumer.
-    GLuint mExtTextureName;
-
-    // Pixel data buffers.
-    size_t mBufSize;
-    GLuint* mPBO;
-    unsigned int mIndex;
+    sp<CpuConsumer> mCpuConsumer;
 
     sp<IBinder> mDpy;
 };
