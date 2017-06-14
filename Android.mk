@@ -4,7 +4,6 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := \
     src/EglWindow.cpp \
-    src/EventQueue.cpp \
     src/InputDevice.cpp \
     src/Program.cpp \
     src/VirtualDisplay.cpp \

@@ -119,11 +119,9 @@ status_t VirtualDisplay::setDisplayProjection(const sp<IBinder>& dpy,
     return NO_ERROR;
 }
 
-status_t VirtualDisplay::start(const DisplayInfo& mainDpyInfo, EventQueue *queue) {
+status_t VirtualDisplay::start(const DisplayInfo& mainDpyInfo) {
 
     Mutex::Autolock _l(mMutex);
-
-    mQueue = queue;
 
     mRotate = isDeviceRotated(mainDpyInfo.orientation);
     mWidth = mRotate ? mainDpyInfo.h : mainDpyInfo.w;
@@ -185,10 +183,7 @@ bool VirtualDisplay::threadLoop() {
     while (mState == RUNNING) {
         mEventCond.wait(mMutex);
         ALOGD("Awake, frame available");
-        void* ptr = processFrame_l();
-
-        //const Event ev(EVENT_BUFFER_READY, ptr);
-        //mQueue->enqueue(ev);
+        processFrame_l();
     }
 
     ALOGV("VDS thread stopping");

@@ -17,7 +17,6 @@
 #ifndef VDS_H
 #define VDS_H
 
-#include "EventQueue.h"
 #include "Program.h"
 #include "EglWindow.h"
 
@@ -48,7 +47,7 @@ public:
     // Create an "input surface", similar in purpose to a MediaCodec input
     // surface, that the virtual display can send buffers to.  Also configures
     // EGL with a pbuffer surface on the current thread.
-    virtual status_t start(const DisplayInfo& mainDpyInfo, EventQueue *queue);
+    virtual status_t start(const DisplayInfo& mainDpyInfo);
 
     virtual status_t stop();
 
@@ -86,8 +85,6 @@ private:
     uint32_t mHeight, mWidth;
     bool mRotate;
 
-    EventQueue *mQueue;
-
     // Used to wait for the FrameAvailableListener callback.
     Mutex mMutex;
 
@@ -96,6 +93,7 @@ private:
 
     // Thread status, mostly useful during startup.
     status_t mThreadResult;
+
     // Overlay thread state.  States advance from left to right; object may
     // not be restarted.
     enum { UNINITIALIZED, INIT, RUNNING, STOPPING, STOPPED } mState;
@@ -123,7 +121,6 @@ private:
 
     // Pixel data buffers.
     size_t mBufSize;
-    uint8_t* mPixelBuf;
     GLuint* mPBO;
     unsigned int mIndex;
 

@@ -1,7 +1,6 @@
 #ifndef VNCFLINGER_H
 #define VNCFLINGER_H
 
-#include "EventQueue.h"
 #include "VirtualDisplay.h"
 
 #include <ui/DisplayInfo.h>
@@ -12,7 +11,7 @@
 
 namespace android {
 
-class VNCFlinger : public EventListener {
+class VNCFlinger {
 public:
     VNCFlinger(int argc, char **argv) :
             mArgc(argc),
@@ -20,21 +19,25 @@ public:
             mClientCount(0) {
     }
 
-    virtual void onEvent(const Event& event);
+    virtual ~VNCFlinger() {}
 
     virtual status_t start();
     virtual status_t stop();
 
-    static EventQueue *sQueue;
+    virtual size_t addClient();
+    virtual size_t removeClient();
 
 private:
+
     virtual status_t setup_l();
     virtual void release_l();
 
     static ClientGoneHookPtr onClientGone(rfbClientPtr cl);
     static enum rfbNewClientAction onNewClient(rfbClientPtr cl);
     static void rfbLogger(const char *format, ...);
-        
+
+    Condition mCondition;
+
     rfbScreenInfoPtr mVNCScreen;
     uint8_t *mVNCBuf;
 

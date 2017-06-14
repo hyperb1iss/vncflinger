@@ -14,8 +14,6 @@
 
 using namespace android;
 
-EventQueue *VNCFlinger::sQueue = new EventQueue();
-
 status_t VNCFlinger::start() {
     Mutex::Autolock _l(mMutex);
 
@@ -28,7 +26,8 @@ status_t VNCFlinger::start() {
     ALOGD("VNCFlinger is running!");
 
     rfbRunEventLoop(mVNCScreen, -1, true);
-    sQueue->await();
+
+    mCondition.wait(mMutex);
 
     release_l();
     return NO_ERROR;
@@ -56,8 +55,6 @@ status_t VNCFlinger::setup_l() {
 
     ALOGD("Display dimensions: %dx%d rotated=%d", mWidth, mHeight, rotated);
 
-    sQueue->addListener(this);
-
     rfbLog = VNCFlinger::rfbLogger;
     rfbErr = VNCFlinger::rfbLogger;
 
@@ -81,6 +78,7 @@ status_t VNCFlinger::setup_l() {
     mVNCScreen->serverFormat.bitsPerPixel = 32;
     mVNCScreen->handleEventsEagerly = true;
     mVNCScreen->deferUpdateTime = 16;
+    mVNCScreen->screenData = this;
 
     rfbInitServer(mVNCScreen);
 
@@ -94,7 +92,6 @@ status_t VNCFlinger::setup_l() {
 }
 
 void VNCFlinger::release_l() {
-    sQueue->removeListener(this);
     mVirtualDisplay.clear();
 
     ALOGD("VNCFlinger released");
@@ -102,70 +99,51 @@ void VNCFlinger::release_l() {
 
 status_t VNCFlinger::stop() {
     Mutex::Autolock _l(mMutex);
-    sQueue->shutdown();
+    mCondition.signal();
 
     return NO_ERROR;
 }
 
-void VNCFlinger::onEvent(const Event& event) {
-
-    ALOGV("onEvent: mId=%d mData=%p", event.mId, event.mData);
-
-    switch(event.mId) {
-        case EVENT_CLIENT_CONNECT:
-            if (mClientCount == 0) {
-                InputDevice::start(mWidth, mHeight);
-                mVirtualDisplay->start(mMainDpyInfo, sQueue);
-            }
-            mClientCount++;
-
-            ALOGI("Client connected (%zu)", mClientCount);
-            break;
-
-        case EVENT_CLIENT_GONE:
-            if (mClientCount > 0) {
-                mClientCount--;
-                if (mClientCount == 0) {
-                    mVirtualDisplay->stop();
-                    InputDevice::stop();
-                }
-            }
-
-            ALOGI("Client disconnected (%zu)", mClientCount);
-            break;
-
-        /*
-        case EVENT_BUFFER_READY:
-            int64_t startWhenNsec, endWhenNsec;
-            startWhenNsec = systemTime(CLOCK_MONOTONIC);
-            if (event.mData == NULL) {
-                break;
-            }
-            //memcpy(mVNCBuf, (uint8_t *) event.mData, mWidth * mHeight * 4);
-            //mVNCScreen->frameBuffer = (char *) event.mData;
-            rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
-            endWhenNsec = systemTime(CLOCK_MONOTONIC);
-            ALOGV("got pixels (mark=%.3fms)",
-                    (endWhenNsec - startWhenNsec) / 1000000.0);
-            break;
-        */
-
-        default:
-            ALOGE("Unhandled event: %d", event.mId);
-            break;
+size_t VNCFlinger::addClient() {
+    Mutex::Autolock _l(mMutex);
+    if (mClientCount == 0) {
+        InputDevice::start(mWidth, mHeight);
+        mVirtualDisplay->start(mMainDpyInfo);
     }
+    mClientCount++;
+
+    ALOGI("Client connected (%zu)", mClientCount);
+
+    return mClientCount;
 }
 
-ClientGoneHookPtr VNCFlinger::onClientGone(rfbClientPtr /* cl */) {
+size_t VNCFlinger::removeClient() {
+    Mutex::Autolock _l(mMutex);
+    if (mClientCount > 0) {
+        mClientCount--;
+        if (mClientCount == 0) {
+            mVirtualDisplay->stop();
+            InputDevice::stop();
+        }
+    }
+
+    ALOGI("Client disconnected (%zu)", mClientCount);
+
+    return mClientCount;
+}
+
+ClientGoneHookPtr VNCFlinger::onClientGone(rfbClientPtr cl) {
     ALOGV("onClientGone");
-    sQueue->enqueue(Event(EVENT_CLIENT_GONE));
+    VNCFlinger *vf = (VNCFlinger *)cl->screen->screenData;
+    vf->removeClient();
     return 0;
 }
 
 enum rfbNewClientAction VNCFlinger::onNewClient(rfbClientPtr cl) {
     ALOGV("onNewClient");
     cl->clientGoneHook = (ClientGoneHookPtr) VNCFlinger::onClientGone;
-    sQueue->enqueue(Event(EVENT_CLIENT_CONNECT));
+    VNCFlinger *vf = (VNCFlinger *)cl->screen->screenData;
+    vf->addClient();
     return RFB_CLIENT_ACCEPT;
 }
 
