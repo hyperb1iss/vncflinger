@@ -9,6 +9,7 @@
 #include <gui/SurfaceComposerClient.h>
 #include <gui/IGraphicBufferProducer.h>
 
+#include "InputDevice.h"
 #include "VNCFlinger.h"
 
 using namespace android;
@@ -74,6 +75,8 @@ status_t VNCFlinger::setup_l() {
     mVNCScreen->httpDir = NULL;
     mVNCScreen->port = VNC_PORT;
     mVNCScreen->newClientHook = (rfbNewClientHookPtr) VNCFlinger::onNewClient;
+    mVNCScreen->kbdAddEvent = InputDevice::keyEvent;
+    mVNCScreen->ptrAddEvent = InputDevice::pointerEvent;
     mVNCScreen->serverFormat.trueColour = true;
     mVNCScreen->serverFormat.bitsPerPixel = 32;
     mVNCScreen->handleEventsEagerly = true;
@@ -111,6 +114,7 @@ void VNCFlinger::onEvent(const Event& event) {
     switch(event.mId) {
         case EVENT_CLIENT_CONNECT:
             if (mClientCount == 0) {
+                InputDevice::start(mWidth, mHeight);
                 mVirtualDisplay->start(mMainDpyInfo, sQueue);
             }
             mClientCount++;
@@ -123,6 +127,7 @@ void VNCFlinger::onEvent(const Event& event) {
                 mClientCount--;
                 if (mClientCount == 0) {
                     mVirtualDisplay->stop();
+                    InputDevice::stop();
                 }
             }
 
