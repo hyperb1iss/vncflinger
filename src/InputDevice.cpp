@@ -53,6 +53,8 @@ status_t InputDevice::start(uint32_t width, uint32_t height) {
 
     status_t err = OK;
 
+    mLeftClicked = mMiddleClicked = mRightClicked = false;
+
     struct input_id id = {
         BUS_VIRTUAL, /* Bus type */
         1,           /* Vendor */
@@ -230,36 +232,28 @@ void InputDevice::onPointerEvent(int buttonMask, int x, int y, rfbClientPtr cl) 
     InputDevice::getInstance().pointerEvent(buttonMask, x, y, cl);
 }
 
-void InputDevice::pointerEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
-    static int leftClicked = 0, rightClicked = 0, middleClicked = 0;
-    (void)cl;
-
+void InputDevice::pointerEvent(int buttonMask, int x, int y, rfbClientPtr /* cl  */) {
     if (mFD < 0) return;
 
     ALOGV("pointerEvent: buttonMask=%x x=%d y=%d", buttonMask, x, y);
 
     Mutex::Autolock _l(mLock);
 
-    if ((buttonMask & 1) && leftClicked) {  // left btn clicked and moving
-        static int i = 0;
-        i = i + 1;
+    if ((buttonMask & 1) && mLeftClicked) {  // left btn clicked and moving
+        inject(EV_ABS, ABS_X, x);
+        inject(EV_ABS, ABS_Y, y);
+        inject(EV_SYN, SYN_REPORT, 0);
 
-        if (i % 10 == 1)  // some tweak to not report every move event
-        {
-            inject(EV_ABS, ABS_X, x);
-            inject(EV_ABS, ABS_Y, y);
-            inject(EV_SYN, SYN_REPORT, 0);
-        }
     } else if (buttonMask & 1) { // left btn clicked
-        leftClicked = 1;
+        mLeftClicked = true;
 
         inject(EV_ABS, ABS_X, x);
         inject(EV_ABS, ABS_Y, y);
         inject(EV_KEY, BTN_TOUCH, 1);
         inject(EV_SYN, SYN_REPORT, 0);
-    } else if (leftClicked)  // left btn released
+    } else if (mLeftClicked)  // left btn released
     {
-        leftClicked = 0;
+        mLeftClicked = false;
         inject(EV_ABS, ABS_X, x);
         inject(EV_ABS, ABS_Y, y);
         inject(EV_KEY, BTN_TOUCH, 0);
@@ -268,34 +262,36 @@ void InputDevice::pointerEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
 
     if (buttonMask & 4)  // right btn clicked
     {
-        rightClicked = 1;
+        mRightClicked = true;
         press(158);  // back key
         inject(EV_SYN, SYN_REPORT, 0);
-    } else if (rightClicked)  // right button released
+    } else if (mRightClicked)  // right button released
     {
-        rightClicked = 0;
+        mRightClicked = false;
         release(158);
         inject(EV_SYN, SYN_REPORT, 0);
     }
 
     if (buttonMask & 2)  // mid btn clicked
     {
-        middleClicked = 1;
+        mMiddleClicked = true;
         press(KEY_END);
         inject(EV_SYN, SYN_REPORT, 0);
-    } else if (middleClicked)  // mid btn released
+    } else if (mMiddleClicked)  // mid btn released
     {
-        middleClicked = 0;
+        mMiddleClicked = false;
         release(KEY_END);
         inject(EV_SYN, SYN_REPORT, 0);
     }
 
     if (buttonMask & 8) {
         inject(EV_REL, REL_WHEEL, 1);
+        inject(EV_SYN, SYN_REPORT, 0);
     }
 
     if (buttonMask & 0x10) {
         inject(EV_REL, REL_WHEEL, -1);
+        inject(EV_SYN, SYN_REPORT, 0);
     }
 }
 

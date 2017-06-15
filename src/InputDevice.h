@@ -64,6 +64,11 @@ private:
     int mFD;
 
     struct uinput_user_dev mUserDev;
+
+    bool mLeftClicked;
+    bool mRightClicked;
+    bool mMiddleClicked;
+
 };
 
 };
