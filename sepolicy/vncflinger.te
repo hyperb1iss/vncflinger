@@ -1,0 +1,17 @@
+type vncflinger_exec, exec_type, file_type;
+type vncflinger, domain;
+
+init_daemon_domain(vncflinger)
+binder_use(vncflinger)
+net_domain(vncflinger);
+
+# uinput
+allow vncflinger uhid_device:chr_file rw_file_perms;
+
+# read buffers from surfaceflinger
+allow vncflinger ion_device:chr_file r_file_perms;
+allow vncflinger surfaceflinger_service:service_manager find;
+binder_call(vncflinger, surfaceflinger);
+
+# buffer callbacks
+binder_call(surfaceflinger, vncflinger);

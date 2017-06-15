@@ -1,0 +1,11 @@
+service vncflinger /system/bin/vncflinger
+    class late_start
+    disabled
+    user system
+    group system input inet readproc
+
+on property:persist.vnc.enable=true
+    start vncflinger
+
+on property:persist.vnc.enable=false
+    stop vncflinger

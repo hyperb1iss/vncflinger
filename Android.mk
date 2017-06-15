@@ -28,11 +28,14 @@ LOCAL_STATIC_LIBRARIES += \
     libvncserver
 
 LOCAL_CFLAGS := -Ofast -Werror -std=c++11
-LOCAL_CFLAGS += -DLOG_NDEBUG=0
 
+#LOCAL_CFLAGS += -DLOG_NDEBUG=0
 #LOCAL_CXX := /usr/bin/include-what-you-use
 
+LOCAL_INIT_RC := etc/vncflinger.rc
+
 LOCAL_MODULE := vncflinger
+
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_EXECUTABLE)
