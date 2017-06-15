@@ -39,12 +39,15 @@ static const struct UInputOptions {
     int bit;
 } kOptions[] = {
     {UI_SET_EVBIT, EV_KEY},
+    {UI_SET_EVBIT, EV_REP},
     {UI_SET_EVBIT, EV_REL},
+    {UI_SET_RELBIT, REL_X},
+    {UI_SET_RELBIT, REL_Y},
+    {UI_SET_RELBIT, REL_WHEEL},
     {UI_SET_EVBIT, EV_ABS},
-    {UI_SET_EVBIT, EV_SYN},
     {UI_SET_ABSBIT, ABS_X},
     {UI_SET_ABSBIT, ABS_Y},
-    {UI_SET_RELBIT, REL_WHEEL},
+    {UI_SET_EVBIT, EV_SYN},
     {UI_SET_PROPBIT, INPUT_PROP_DIRECT},
 };
 
