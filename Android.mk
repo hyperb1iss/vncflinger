@@ -4,7 +4,6 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := \
     src/InputDevice.cpp \
-    src/VirtualDisplay.cpp \
     src/VNCFlinger.cpp \
     src/main.cpp
 
