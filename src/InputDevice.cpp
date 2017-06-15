@@ -32,98 +32,105 @@
 
 using namespace android;
 
+ANDROID_SINGLETON_STATIC_INSTANCE(InputDevice)
+
 static const struct UInputOptions {
     int cmd;
     int bit;
 } kOptions[] = {
     {UI_SET_EVBIT, EV_KEY},
-    {UI_SET_EVBIT, EV_REP},
+    {UI_SET_EVBIT, EV_REL},
     {UI_SET_EVBIT, EV_ABS},
     {UI_SET_EVBIT, EV_SYN},
     {UI_SET_ABSBIT, ABS_X},
     {UI_SET_ABSBIT, ABS_Y},
+    {UI_SET_RELBIT, REL_WHEEL},
     {UI_SET_PROPBIT, INPUT_PROP_DIRECT},
 };
 
-int InputDevice::sFD = -1;
-
 status_t InputDevice::start(uint32_t width, uint32_t height) {
+    Mutex::Autolock _l(mLock);
+
     status_t err = OK;
-    struct uinput_user_dev user_dev;
 
     struct input_id id = {
         BUS_VIRTUAL, /* Bus type */
         1,           /* Vendor */
         1,           /* Product */
-        1,           /* Version */
+        4,           /* Version */
     };
 
-    if (sFD >= 0) {
+    if (mFD >= 0) {
         ALOGE("Input device already open!");
         return NO_INIT;
     }
 
-    sFD = open(UINPUT_DEVICE, O_WRONLY | O_NONBLOCK);
-    if (sFD < 0) {
-        ALOGE("Failed to open %s: err=%d", UINPUT_DEVICE, sFD);
+    mFD = open(UINPUT_DEVICE, O_WRONLY | O_NONBLOCK);
+    if (mFD < 0) {
+        ALOGE("Failed to open %s: err=%d", UINPUT_DEVICE, mFD);
         return NO_INIT;
     }
 
     unsigned int idx = 0;
     for (idx = 0; idx < sizeof(kOptions) / sizeof(kOptions[0]); idx++) {
-        if (ioctl(sFD, kOptions[idx].cmd, kOptions[idx].bit) < 0) {
+        if (ioctl(mFD, kOptions[idx].cmd, kOptions[idx].bit) < 0) {
             ALOGE("uinput ioctl failed: %d %d", kOptions[idx].cmd, kOptions[idx].bit);
             goto err_ioctl;
         }
     }
 
     for (idx = 0; idx < KEY_MAX; idx++) {
-        if (ioctl(sFD, UI_SET_KEYBIT, idx) < 0) {
+        if (ioctl(mFD, UI_SET_KEYBIT, idx) < 0) {
             ALOGE("UI_SET_KEYBIT failed");
             goto err_ioctl;
         }
     }
 
-    memset(&user_dev, 0, sizeof(user_dev));
-    strncpy(user_dev.name, "VNC", UINPUT_MAX_NAME_SIZE);
+    memset(&mUserDev, 0, sizeof(mUserDev));
+    strncpy(mUserDev.name, "VNC-RemoteInput", UINPUT_MAX_NAME_SIZE);
 
-    user_dev.id = id;
+    mUserDev.id = id;
 
-    user_dev.absmin[ABS_X] = 0;
-    user_dev.absmax[ABS_X] = width;
-    user_dev.absmin[ABS_Y] = 0;
-    user_dev.absmax[ABS_Y] = height;
+    mUserDev.absmin[ABS_X] = 0;
+    mUserDev.absmax[ABS_X] = width;
+    mUserDev.absmin[ABS_Y] = 0;
+    mUserDev.absmax[ABS_Y] = height;
 
-    if (write(sFD, &user_dev, sizeof(user_dev)) != sizeof(user_dev)) {
+    if (write(mFD, &mUserDev, sizeof(mUserDev)) != sizeof(mUserDev)) {
         ALOGE("Failed to configure uinput device");
         goto err_ioctl;
     }
 
-    if (ioctl(sFD, UI_DEV_CREATE) == -1) {
+    if (ioctl(mFD, UI_DEV_CREATE) == -1) {
         ALOGE("UI_DEV_CREATE failed");
         goto err_ioctl;
     }
 
-    return OK;
+    ALOGD("Virtual input device created successfully (%dx%d)", width, height);
+    return NO_ERROR;
 
 err_ioctl:
     int prev_errno = errno;
-    ::close(sFD);
+    ::close(mFD);
     errno = prev_errno;
-    sFD = -1;
+    mFD = -1;
     return NO_INIT;
 }
 
+status_t InputDevice::reconfigure(uint32_t width, uint32_t height) {
+    stop();
+    return start(width, height);
+}
+
 status_t InputDevice::stop() {
-    if (sFD < 0) {
+    Mutex::Autolock _l(mLock);
+    if (mFD < 0) {
         return OK;
     }
 
-    sleep(2);
-
-    ioctl(sFD, UI_DEV_DESTROY);
-    close(sFD);
-    sFD = -1;
+    ioctl(mFD, UI_DEV_DESTROY);
+    close(mFD);
+    mFD = -1;
 
     return OK;
 }
@@ -135,7 +142,7 @@ status_t InputDevice::inject(uint16_t type, uint16_t code, int32_t value) {
     event.type = type;
     event.code = code;
     event.value = value;
-    if (write(sFD, &event, sizeof(event)) != sizeof(event)) return BAD_VALUE;
+    if (write(mFD, &event, sizeof(event)) != sizeof(event)) return BAD_VALUE;
     return OK;
 }
 
@@ -175,12 +182,18 @@ status_t InputDevice::click(uint16_t code) {
     return release(code);
 }
 
+void InputDevice::onKeyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl) {
+    InputDevice::getInstance().keyEvent(down, key, cl);
+}
+
 void InputDevice::keyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl) {
     int code;
     int sh = 0;
     int alt = 0;
 
-    if (sFD < 0) return;
+    if (mFD < 0) return;
+
+    Mutex::Autolock _l(mLock);
 
     if ((code = keysym2scancode(key, cl, &sh, &alt))) {
         int ret = 0;
@@ -213,11 +226,19 @@ void InputDevice::keyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl) {
     }
 }
 
+void InputDevice::onPointerEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
+    InputDevice::getInstance().pointerEvent(buttonMask, x, y, cl);
+}
+
 void InputDevice::pointerEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     static int leftClicked = 0, rightClicked = 0, middleClicked = 0;
     (void)cl;
 
-    if (sFD < 0) return;
+    if (mFD < 0) return;
+
+    ALOGV("pointerEvent: buttonMask=%x x=%d y=%d", buttonMask, x, y);
+
+    Mutex::Autolock _l(mLock);
 
     if ((buttonMask & 1) && leftClicked) {  // left btn clicked and moving
         static int i = 0;
@@ -229,8 +250,7 @@ void InputDevice::pointerEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
             inject(EV_ABS, ABS_Y, y);
             inject(EV_SYN, SYN_REPORT, 0);
         }
-    } else if (buttonMask & 1)  // left btn clicked
-    {
+    } else if (buttonMask & 1) { // left btn clicked
         leftClicked = 1;
 
         inject(EV_ABS, ABS_X, x);
@@ -268,6 +288,14 @@ void InputDevice::pointerEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
         middleClicked = 0;
         release(KEY_END);
         inject(EV_SYN, SYN_REPORT, 0);
+    }
+
+    if (buttonMask & 8) {
+        inject(EV_REL, REL_WHEEL, 1);
+    }
+
+    if (buttonMask & 0x10) {
+        inject(EV_REL, REL_WHEEL, -1);
     }
 }
 

@@ -19,37 +19,51 @@
 #define INPUT_DEVICE_H
 
 #include <utils/Errors.h>
-#include <utils/RefBase.h>
+#include <utils/Mutex.h>
+#include <utils/Singleton.h>
 
 #include <rfb/rfb.h>
-
+#include <linux/uinput.h>
 
 #define UINPUT_DEVICE "/dev/uinput"
 
 namespace android {
 
-class InputDevice : public RefBase {
-public:
-    static status_t start(uint32_t width, uint32_t height);
-    static status_t stop();
+class InputDevice : public Singleton<InputDevice> {
 
-    static void keyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl);
-    static void pointerEvent(int buttonMask, int x, int y, rfbClientPtr cl);
+friend class Singleton;
+
+public:
+    virtual status_t start(uint32_t width, uint32_t height);
+    virtual status_t stop();
+    virtual status_t reconfigure(uint32_t width, uint32_t height);
+
+    static void onKeyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl);
+    static void onPointerEvent(int buttonMask, int x, int y, rfbClientPtr cl);
+
+    InputDevice() : mFD(-1) {}
+    virtual ~InputDevice() {}
 
 private:
 
-    static status_t inject(uint16_t type, uint16_t code, int32_t value);
-    static status_t injectSyn(uint16_t type, uint16_t code, int32_t value);
-    static status_t movePointer(int32_t x, int32_t y);
-    static status_t setPointer(int32_t x, int32_t y);
-    static status_t press(uint16_t code);
-    static status_t release(uint16_t code);
-    static status_t click(uint16_t code);
+    status_t inject(uint16_t type, uint16_t code, int32_t value);
+    status_t injectSyn(uint16_t type, uint16_t code, int32_t value);
+    status_t movePointer(int32_t x, int32_t y);
+    status_t setPointer(int32_t x, int32_t y);
+    status_t press(uint16_t code);
+    status_t release(uint16_t code);
+    status_t click(uint16_t code);
 
-    static int keysym2scancode(rfbKeySym c, rfbClientPtr cl, int* sh, int* alt);
+    void keyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl);
+    void pointerEvent(int buttonMask, int x, int y, rfbClientPtr cl);
 
-    static int sFD;
+    int keysym2scancode(rfbKeySym c, rfbClientPtr cl, int* sh, int* alt);
 
+    Mutex mLock;
+
+    int mFD;
+
+    struct uinput_user_dev mUserDev;
 };
 
 };

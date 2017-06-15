@@ -32,7 +32,8 @@ public:
     VNCFlinger(int argc, char **argv) :
             mArgc(argc),
             mArgv(argv),
-            mClientCount(0) {
+            mClientCount(0),
+            mOrientation(-1) {
     }
 
     virtual ~VNCFlinger() {}
@@ -60,10 +61,14 @@ private:
     virtual void eventLoop();
 
     virtual status_t createVirtualDisplay();
-    virtual status_t destroyVirtualDisplay();
+    virtual status_t destroyVirtualDisplayLocked();
     virtual status_t createVNCServer();
 
     virtual void processFrame();
+
+    virtual bool isDeviceRotated(int orientation);
+    virtual bool updateDisplayProjection();
+    virtual status_t updateFBSize(int width, int height, int stride);
 
     // vncserver callbacks
     static ClientGoneHookPtr onClientGone(rfbClientPtr cl);
@@ -74,6 +79,9 @@ private:
 
     bool mRunning;
     bool mFrameAvailable;
+    bool mRotate;
+    bool mVDSActive;
+    bool mInputReconfigPending;
 
     Mutex mEventMutex;
     Mutex mUpdateMutex;
@@ -83,15 +91,16 @@ private:
     rfbScreenInfoPtr mVNCScreen;
     uint8_t *mVNCBuf;
 
-    uint32_t mWidth, mHeight;
+    int mWidth, mHeight;
 
     sp<IBinder> mMainDpy;
-    DisplayInfo mMainDpyInfo;
 
     int mArgc;
     char **mArgv;
 
     size_t mClientCount;
+
+    int mOrientation;
 
     sp<FrameListener> mListener;
 
