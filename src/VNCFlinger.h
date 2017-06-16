@@ -21,9 +21,10 @@
 #include <gui/CpuConsumer.h>
 #include <ui/DisplayInfo.h>
 
-#include "rfb/rfb.h"
+#include <rfb/rfb.h>
 
 #define VNC_PORT 5901
+#define NUM_BUFS 1
 
 namespace android {
 
@@ -65,7 +66,7 @@ class VNCFlinger {
 
     virtual bool isDeviceRotated(int orientation);
     virtual bool updateDisplayProjection();
-    virtual status_t updateFBSize(int width, int height, int stride);
+    virtual bool updateFBSize(CpuConsumer::LockedBuffer& buf);
 
     // vncserver callbacks
     static ClientGoneHookPtr onClientGone(rfbClientPtr cl);
@@ -87,12 +88,15 @@ class VNCFlinger {
 
     Condition mEventCond;
 
-    int mWidth, mHeight, mOrientation;
+    uint32_t mWidth, mHeight;
+    int32_t mOrientation;
 
     size_t mClientCount;
 
-    // Framebuffer
-    uint8_t* mVNCBuf;
+    // Framebuffers
+    uint64_t mFrameNumber;
+    uint64_t mFrameSize;
+    nsecs_t mFrameStartWhen;
 
     // Server instance
     rfbScreenInfoPtr mVNCScreen;

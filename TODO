@@ -1,6 +1,5 @@
 Various things that need done:
 
-Orientation change
 FPS reporting
 Copy/paste
 Commandline args for tuning (port, encodings, etc)

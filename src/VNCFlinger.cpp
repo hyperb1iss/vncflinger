@@ -66,7 +66,7 @@ status_t VNCFlinger::stop() {
     mRunning = false;
 
     mEventCond.signal();
-
+    delete[] mVNCScreen->frameBuffer;
     return NO_ERROR;
 }
 
@@ -100,6 +100,7 @@ void VNCFlinger::eventLoop() {
             }
         }
         Mutex::Autolock _l(mUpdateMutex);
+        memset(mVNCScreen->frameBuffer, 0, mFrameSize);
         destroyVirtualDisplayLocked();
     }
 }
@@ -107,7 +108,7 @@ void VNCFlinger::eventLoop() {
 status_t VNCFlinger::createVirtualDisplay() {
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&mProducer, &consumer);
-    mCpuConsumer = new CpuConsumer(consumer, 1);
+    mCpuConsumer = new CpuConsumer(consumer, NUM_BUFS);
     mCpuConsumer->setName(String8("vds-to-cpu"));
     mCpuConsumer->setDefaultBufferSize(mWidth, mHeight);
     mProducer->setMaxDequeuedBufferCount(4);
@@ -159,8 +160,11 @@ status_t VNCFlinger::createVNCServer() {
         return NO_INIT;
     }
 
-    mVNCBuf = new uint8_t[mWidth * mHeight * 4];
-    mVNCScreen->frameBuffer = (char*)mVNCBuf;
+    mFrameNumber = 0;
+    mFrameSize = mWidth * mHeight * 4;
+    mVNCScreen->frameBuffer = (char*)new uint8_t[mFrameSize];
+    memset(mVNCScreen->frameBuffer, 0, mFrameSize);
+
     mVNCScreen->desktopName = "VNCFlinger";
     mVNCScreen->alwaysShared = TRUE;
     mVNCScreen->httpDir = NULL;
@@ -187,7 +191,6 @@ size_t VNCFlinger::addClient() {
     Mutex::Autolock _l(mEventMutex);
     if (mClientCount == 0) {
         mClientCount++;
-        updateFBSize(mWidth, mHeight, mWidth);
         InputDevice::getInstance().start(mWidth, mHeight);
         mEventCond.signal();
     }
@@ -212,59 +215,14 @@ size_t VNCFlinger::removeClient() {
     return mClientCount;
 }
 
-ClientGoneHookPtr VNCFlinger::onClientGone(rfbClientPtr cl) {
-    ALOGV("onClientGone");
-    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
-    vf->removeClient();
-    return 0;
-}
-
-enum rfbNewClientAction VNCFlinger::onNewClient(rfbClientPtr cl) {
-    ALOGV("onNewClient");
-    cl->clientGoneHook = (ClientGoneHookPtr)VNCFlinger::onClientGone;
-    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
-    vf->addClient();
-    return RFB_CLIENT_ACCEPT;
-}
-
-void VNCFlinger::onFrameStart(rfbClientPtr cl) {
-    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
-    vf->mUpdateMutex.lock();
-    ALOGV("frame start");
-}
-
-void VNCFlinger::onFrameDone(rfbClientPtr cl, int status) {
-    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
-    vf->mUpdateMutex.unlock();
-    ALOGV("frame done! %d", status);
-}
-
-void VNCFlinger::rfbLogger(const char* format, ...) {
-    va_list args;
-    char buf[256];
-
-    va_start(args, format);
-    vsprintf(buf, format, args);
-    ALOGI("%s", buf);
-    va_end(args);
-}
-
-void VNCFlinger::FrameListener::onFrameAvailable(const BufferItem& item) {
-    Mutex::Autolock _l(mVNC->mEventMutex);
-    mVNC->mFrameAvailable = true;
-    mVNC->mEventCond.signal();
-    ALOGV("onFrameAvailable: mTimestamp=%ld mFrameNumber=%ld", item.mTimestamp, item.mFrameNumber);
-}
-
 void VNCFlinger::processFrame() {
-    ALOGV("processFrame\n");
-
     // Take the update mutex. This ensures that we don't dequeue
     // a new buffer and blow away the one being sent to a client.
     // The BufferQueue is self-regulating and will drop frames
     // automatically for us.
     Mutex::Autolock _l(mUpdateMutex);
 
+    // get a frame from the virtual display
     CpuConsumer::LockedBuffer imgBuffer;
     status_t res = mCpuConsumer->lockNextBuffer(&imgBuffer);
     if (res != OK) {
@@ -272,13 +230,19 @@ void VNCFlinger::processFrame() {
         return;
     }
 
-    ALOGV("processFrame: ptr: %p format: %x (%dx%d, stride=%d)", imgBuffer.data, imgBuffer.format,
+    mFrameNumber = imgBuffer.frameNumber;
+    ALOGV("processFrame: [%lu] format: %x (%dx%d, stride=%d)", mFrameNumber, imgBuffer.format,
           imgBuffer.width, imgBuffer.height, imgBuffer.stride);
 
-    updateFBSize(imgBuffer.width, imgBuffer.height, imgBuffer.stride);
+    // we don't know if there was a stride change until we get
+    // a buffer from the queue. if it changed, we need to resize
+    updateFBSize(imgBuffer);
 
-    memcpy(mVNCBuf, imgBuffer.data, imgBuffer.stride * imgBuffer.height * 4);
+    // performance is extremely bad if the gpu memory is used
+    // directly without copying because it is likely uncached
+    memcpy(mVNCScreen->frameBuffer, imgBuffer.data, mFrameSize);
 
+    // update clients
     rfbMarkRectAsModified(mVNCScreen, 0, 0, imgBuffer.width, imgBuffer.height);
 
     mCpuConsumer->unlockBuffer(imgBuffer);
@@ -303,15 +267,11 @@ bool VNCFlinger::updateDisplayProjection() {
         return true;
     }
 
-    if (info.orientation == mOrientation) {
-        return false;
-    }
-
     // Set the region of the layer stack we're interested in, which in our
     // case is "all of it".  If the app is rotated (so that the width of the
     // app is based on the height of the display), reverse width/height.
     bool deviceRotated = isDeviceRotated(info.orientation);
-    int sourceWidth, sourceHeight;
+    uint32_t sourceWidth, sourceHeight;
     if (!deviceRotated) {
         sourceWidth = info.w;
         sourceHeight = info.h;
@@ -321,7 +281,13 @@ bool VNCFlinger::updateDisplayProjection() {
         sourceWidth = info.h;
     }
 
-    Mutex::Autolock _l(mUpdateMutex);
+    if (mWidth == sourceWidth && mHeight == sourceHeight && mOrientation == info.orientation) {
+        return false;
+    }
+
+    ALOGD("Display dimensions: %dx%d orientation=%d", sourceWidth, sourceHeight, info.orientation);
+
+    // orientation change
     mWidth = sourceWidth;
     mHeight = sourceHeight;
     mOrientation = info.orientation;
@@ -330,28 +296,85 @@ bool VNCFlinger::updateDisplayProjection() {
         return true;
     }
 
+    // it does not appear to be possible to reconfigure the virtual display
+    // on the fly without forcing surfaceflinger to tear it down
     destroyVirtualDisplayLocked();
     createVirtualDisplay();
-    return true;
+    return false;
 }
 
-status_t VNCFlinger::updateFBSize(int width, int height, int stride) {
-    if ((mVNCScreen->paddedWidthInBytes / 4) != stride || mVNCScreen->height != height ||
-        mVNCScreen->width != width) {
-        ALOGD("updateFBSize: old=[%dx%d %d] new=[%dx%d %d]", mVNCScreen->width, mVNCScreen->height,
-              mVNCScreen->paddedWidthInBytes / 4, width, height, stride);
+bool VNCFlinger::updateFBSize(CpuConsumer::LockedBuffer& buf) {
+    uint32_t stride = (uint32_t)mVNCScreen->paddedWidthInBytes / 4;
+    uint32_t width = (uint32_t)mVNCScreen->width;
+    uint32_t height = (uint32_t)mVNCScreen->height;
 
-        delete[] mVNCBuf;
-        mVNCBuf = new uint8_t[stride * height * 4];
-        memset(mVNCBuf, 0, stride * height * 4);
+    uint64_t newSize = buf.stride * buf.height * 4;
 
-        // little dance here to avoid an ugly immediate resize
-        if (mVNCScreen->height != height || mVNCScreen->width != width) {
-            rfbNewFramebuffer(mVNCScreen, (char*)mVNCBuf, width, height, 8, 3, 4);
-        } else {
-            mVNCScreen->frameBuffer = (char*)mVNCBuf;
+    if (stride != buf.stride || height != buf.height || width != buf.width) {
+        ALOGD("updateFBSize: old=[%dx%d %d] new=[%dx%d %d]", width, height, stride, buf.width,
+              buf.height, buf.stride);
+
+        if (mFrameSize != newSize) {
+            mFrameSize = newSize;
+            delete[] mVNCScreen->frameBuffer;
+            rfbNewFramebuffer(mVNCScreen, (char*)new uint8_t[newSize], buf.width, buf.height, 8, 3,
+                              4);
         }
-        mVNCScreen->paddedWidthInBytes = stride * 4;
+        mVNCScreen->paddedWidthInBytes = buf.stride * 4;
     }
     return NO_ERROR;
+}
+
+// ------------------------------------------------------------------------ //
+
+// libvncserver logger
+void VNCFlinger::rfbLogger(const char* format, ...) {
+    va_list args;
+    char buf[256];
+
+    va_start(args, format);
+    vsprintf(buf, format, args);
+    ALOGI("%s", buf);
+    va_end(args);
+}
+
+// libvncserver callbacks
+ClientGoneHookPtr VNCFlinger::onClientGone(rfbClientPtr cl) {
+    ALOGV("onClientGone");
+    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
+    vf->removeClient();
+    return 0;
+}
+
+enum rfbNewClientAction VNCFlinger::onNewClient(rfbClientPtr cl) {
+    ALOGV("onNewClient");
+    cl->clientGoneHook = (ClientGoneHookPtr)VNCFlinger::onClientGone;
+    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
+    vf->addClient();
+    return RFB_CLIENT_ACCEPT;
+}
+
+void VNCFlinger::onFrameStart(rfbClientPtr cl) {
+    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
+    vf->mUpdateMutex.lock();
+
+    vf->mFrameStartWhen = systemTime(CLOCK_MONOTONIC);
+    ALOGV("frame start [%lu]", vf->mFrameNumber);
+}
+
+void VNCFlinger::onFrameDone(rfbClientPtr cl, int /* status */) {
+    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
+
+    float timing = (systemTime(CLOCK_MONOTONIC) - vf->mFrameStartWhen) / 1000000.0;
+    ALOGV("onFrameDone [%lu] (%.3f ms)", vf->mFrameNumber, timing);
+
+    vf->mUpdateMutex.unlock();
+}
+
+// cpuconsumer frame listener
+void VNCFlinger::FrameListener::onFrameAvailable(const BufferItem& item) {
+    Mutex::Autolock _l(mVNC->mEventMutex);
+    mVNC->mFrameAvailable = true;
+    mVNC->mEventCond.signal();
+    ALOGV("onFrameAvailable: [%lu] mTimestamp=%ld", item.mFrameNumber, item.mTimestamp);
 }
