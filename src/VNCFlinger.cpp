@@ -19,16 +19,15 @@
 #include <utils/Log.h>
 
 #include <binder/IPCThreadState.h>
-#include <binder/ProcessState.h>
 #include <binder/IServiceManager.h>
+#include <binder/ProcessState.h>
 
+#include <gui/IGraphicBufferProducer.h>
 #include <gui/ISurfaceComposer.h>
 #include <gui/SurfaceComposerClient.h>
-#include <gui/IGraphicBufferProducer.h>
 
 #include "InputDevice.h"
 #include "VNCFlinger.h"
-
 
 using namespace android;
 
@@ -36,8 +35,7 @@ status_t VNCFlinger::start() {
     sp<ProcessState> self = ProcessState::self();
     self->startThreadPool();
 
-    mMainDpy = SurfaceComposerClient::getBuiltInDisplay(
-            ISurfaceComposer::eDisplayIdMain);
+    mMainDpy = SurfaceComposerClient::getBuiltInDisplay(ISurfaceComposer::eDisplayIdMain);
 
     updateDisplayProjection();
 
@@ -101,13 +99,12 @@ status_t VNCFlinger::createVirtualDisplay() {
     mListener = new FrameListener(this);
     mCpuConsumer->setFrameAvailableListener(mListener);
 
-    mDpy = SurfaceComposerClient::createDisplay(
-            String8("VNC-VirtualDisplay"), false /*secure*/);
+    mDpy = SurfaceComposerClient::createDisplay(String8("VNC-VirtualDisplay"), false /*secure*/);
 
     SurfaceComposerClient::openGlobalTransaction();
     SurfaceComposerClient::setDisplaySurface(mDpy, mProducer);
-    //setDisplayProjection(mDpy, mainDpyInfo);
-    SurfaceComposerClient::setDisplayLayerStack(mDpy, 0);    // default stack
+    // setDisplayProjection(mDpy, mainDpyInfo);
+    SurfaceComposerClient::setDisplayLayerStack(mDpy, 0);  // default stack
     SurfaceComposerClient::closeGlobalTransaction();
 
     mVDSActive = true;
@@ -118,7 +115,6 @@ status_t VNCFlinger::createVirtualDisplay() {
 }
 
 status_t VNCFlinger::destroyVirtualDisplayLocked() {
-
     mCpuConsumer.clear();
     mProducer.clear();
     SurfaceComposerClient::destroyDisplay(mDpy);
@@ -131,7 +127,6 @@ status_t VNCFlinger::destroyVirtualDisplayLocked() {
 }
 
 status_t VNCFlinger::createVNCServer() {
-
     status_t err = NO_ERROR;
 
     rfbLog = VNCFlinger::rfbLogger;
@@ -145,16 +140,16 @@ status_t VNCFlinger::createVNCServer() {
     }
 
     mVNCBuf = new uint8_t[mWidth * mHeight * 4];
-    mVNCScreen->frameBuffer = (char *) mVNCBuf;
+    mVNCScreen->frameBuffer = (char*)mVNCBuf;
     mVNCScreen->desktopName = "VNCFlinger";
     mVNCScreen->alwaysShared = TRUE;
     mVNCScreen->httpDir = NULL;
     mVNCScreen->port = VNC_PORT;
-    mVNCScreen->newClientHook = (rfbNewClientHookPtr) VNCFlinger::onNewClient;
+    mVNCScreen->newClientHook = (rfbNewClientHookPtr)VNCFlinger::onNewClient;
     mVNCScreen->kbdAddEvent = InputDevice::onKeyEvent;
     mVNCScreen->ptrAddEvent = InputDevice::onPointerEvent;
-    mVNCScreen->displayHook = (rfbDisplayHookPtr) VNCFlinger::onFrameStart;
-    mVNCScreen->displayFinishedHook = (rfbDisplayFinishedHookPtr) VNCFlinger::onFrameDone;
+    mVNCScreen->displayHook = (rfbDisplayHookPtr)VNCFlinger::onFrameStart;
+    mVNCScreen->displayFinishedHook = (rfbDisplayFinishedHookPtr)VNCFlinger::onFrameDone;
     mVNCScreen->serverFormat.trueColour = true;
     mVNCScreen->serverFormat.bitsPerPixel = 32;
     mVNCScreen->handleEventsEagerly = true;
@@ -210,37 +205,32 @@ size_t VNCFlinger::removeClient() {
 
 ClientGoneHookPtr VNCFlinger::onClientGone(rfbClientPtr cl) {
     ALOGV("onClientGone");
-    VNCFlinger *vf = (VNCFlinger *)cl->screen->screenData;
+    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
     vf->removeClient();
     return 0;
 }
 
 enum rfbNewClientAction VNCFlinger::onNewClient(rfbClientPtr cl) {
     ALOGV("onNewClient");
-    cl->clientGoneHook = (ClientGoneHookPtr) VNCFlinger::onClientGone;
-    VNCFlinger *vf = (VNCFlinger *)cl->screen->screenData;
+    cl->clientGoneHook = (ClientGoneHookPtr)VNCFlinger::onClientGone;
+    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
     vf->addClient();
     return RFB_CLIENT_ACCEPT;
 }
 
 void VNCFlinger::onFrameStart(rfbClientPtr cl) {
-    VNCFlinger *vf = (VNCFlinger *)cl->screen->screenData;
+    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
     vf->mUpdateMutex.lock();
     ALOGV("frame start");
 }
 
 void VNCFlinger::onFrameDone(rfbClientPtr cl, int status) {
-    VNCFlinger *vf = (VNCFlinger *)cl->screen->screenData;
-
-    if (vf->mInputReconfigPending) {
-        //InputDevice::getInstance().reconfigure(vf->mWidth, vf->mHeight);
-        vf->mInputReconfigPending = false;
-    }
+    VNCFlinger* vf = (VNCFlinger*)cl->screen->screenData;
     vf->mUpdateMutex.unlock();
     ALOGV("frame done! %d", status);
 }
 
-void VNCFlinger::rfbLogger(const char *format, ...) {
+void VNCFlinger::rfbLogger(const char* format, ...) {
     va_list args;
     char buf[256];
 
@@ -254,8 +244,7 @@ void VNCFlinger::FrameListener::onFrameAvailable(const BufferItem& item) {
     Mutex::Autolock _l(mVNC->mEventMutex);
     mVNC->mFrameAvailable = true;
     mVNC->mEventCond.signal();
-    ALOGV("onFrameAvailable: mTimestamp=%ld mFrameNumber=%ld",
-            item.mTimestamp, item.mFrameNumber);
+    ALOGV("onFrameAvailable: mTimestamp=%ld mFrameNumber=%ld", item.mTimestamp, item.mFrameNumber);
 }
 
 void VNCFlinger::processFrame() {
@@ -274,9 +263,8 @@ void VNCFlinger::processFrame() {
         return;
     }
 
-    ALOGV("processFrame: ptr: %p format: %x (%dx%d, stride=%d)",
-            imgBuffer.data, imgBuffer.format, imgBuffer.width,
-            imgBuffer.height, imgBuffer.stride);
+    ALOGV("processFrame: ptr: %p format: %x (%dx%d, stride=%d)", imgBuffer.data, imgBuffer.format,
+          imgBuffer.width, imgBuffer.height, imgBuffer.stride);
 
     updateFBSize(imgBuffer.width, imgBuffer.height, imgBuffer.stride);
 
@@ -291,8 +279,7 @@ void VNCFlinger::processFrame() {
  * Returns "true" if the device is rotated 90 degrees.
  */
 bool VNCFlinger::isDeviceRotated(int orientation) {
-    return orientation != DISPLAY_ORIENTATION_0 &&
-            orientation != DISPLAY_ORIENTATION_180;
+    return orientation != DISPLAY_ORIENTATION_0 && orientation != DISPLAY_ORIENTATION_180;
 }
 
 /*
@@ -300,7 +287,6 @@ bool VNCFlinger::isDeviceRotated(int orientation) {
  * and device orientation.
  */
 bool VNCFlinger::updateDisplayProjection() {
-
     DisplayInfo info;
     status_t err = SurfaceComposerClient::getDisplayInfo(mMainDpy, &info);
     if (err != NO_ERROR) {
@@ -341,13 +327,10 @@ bool VNCFlinger::updateDisplayProjection() {
 }
 
 status_t VNCFlinger::updateFBSize(int width, int height, int stride) {
-    if ((mVNCScreen->paddedWidthInBytes / 4) != stride ||
-            mVNCScreen->height != height ||
-            mVNCScreen->width != width) {
-
-        ALOGD("updateFBSize: old=[%dx%d %d] new=[%dx%d %d]",
-                mVNCScreen->width, mVNCScreen->height, mVNCScreen->paddedWidthInBytes / 4,
-                width, height, stride);
+    if ((mVNCScreen->paddedWidthInBytes / 4) != stride || mVNCScreen->height != height ||
+        mVNCScreen->width != width) {
+        ALOGD("updateFBSize: old=[%dx%d %d] new=[%dx%d %d]", mVNCScreen->width, mVNCScreen->height,
+              mVNCScreen->paddedWidthInBytes / 4, width, height, stride);
 
         delete[] mVNCBuf;
         mVNCBuf = new uint8_t[stride * height * 4];
@@ -355,10 +338,9 @@ status_t VNCFlinger::updateFBSize(int width, int height, int stride) {
 
         // little dance here to avoid an ugly immediate resize
         if (mVNCScreen->height != height || mVNCScreen->width != width) {
-            mInputReconfigPending = true;
-            rfbNewFramebuffer(mVNCScreen, (char *)mVNCBuf, width, height, 8, 3, 4);
+            rfbNewFramebuffer(mVNCScreen, (char*)mVNCBuf, width, height, 8, 3, 4);
         } else {
-            mVNCScreen->frameBuffer = (char *)mVNCBuf;
+            mVNCScreen->frameBuffer = (char*)mVNCBuf;
         }
         mVNCScreen->paddedWidthInBytes = stride * 4;
     }

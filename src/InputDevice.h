@@ -22,18 +22,17 @@
 #include <utils/Mutex.h>
 #include <utils/Singleton.h>
 
-#include <rfb/rfb.h>
 #include <linux/uinput.h>
+#include <rfb/rfb.h>
 
 #define UINPUT_DEVICE "/dev/uinput"
 
 namespace android {
 
 class InputDevice : public Singleton<InputDevice> {
+    friend class Singleton;
 
-friend class Singleton;
-
-public:
+  public:
     virtual status_t start(uint32_t width, uint32_t height);
     virtual status_t stop();
     virtual status_t reconfigure(uint32_t width, uint32_t height);
@@ -41,11 +40,12 @@ public:
     static void onKeyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl);
     static void onPointerEvent(int buttonMask, int x, int y, rfbClientPtr cl);
 
-    InputDevice() : mFD(-1) {}
-    virtual ~InputDevice() {}
+    InputDevice() : mFD(-1) {
+    }
+    virtual ~InputDevice() {
+    }
 
-private:
-
+  private:
     status_t inject(uint16_t type, uint16_t code, int32_t value);
     status_t injectSyn(uint16_t type, uint16_t code, int32_t value);
     status_t movePointer(int32_t x, int32_t y);
@@ -68,8 +68,6 @@ private:
     bool mLeftClicked;
     bool mRightClicked;
     bool mMiddleClicked;
-
 };
-
 };
 #endif

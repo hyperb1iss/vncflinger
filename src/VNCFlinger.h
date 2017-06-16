@@ -28,15 +28,12 @@
 namespace android {
 
 class VNCFlinger {
-public:
-    VNCFlinger(int argc, char **argv) :
-            mArgc(argc),
-            mArgv(argv),
-            mClientCount(0),
-            mOrientation(-1) {
+  public:
+    VNCFlinger(int argc, char** argv) : mArgc(argc), mArgv(argv), mOrientation(-1) {
     }
 
-    virtual ~VNCFlinger() {}
+    virtual ~VNCFlinger() {
+    }
 
     virtual status_t start();
     virtual status_t stop();
@@ -44,18 +41,18 @@ public:
     virtual size_t addClient();
     virtual size_t removeClient();
 
-
-private:
-
+  private:
     class FrameListener : public CpuConsumer::FrameAvailableListener {
-    public:
-        FrameListener(VNCFlinger *vnc) : mVNC(vnc) {}
+      public:
+        FrameListener(VNCFlinger* vnc) : mVNC(vnc) {
+        }
 
         virtual void onFrameAvailable(const BufferItem& item);
 
-    private:
-        FrameListener(FrameListener&) {}
-        VNCFlinger *mVNC;
+      private:
+        FrameListener(FrameListener&) {
+        }
+        VNCFlinger* mVNC;
     };
 
     virtual void eventLoop();
@@ -75,34 +72,36 @@ private:
     static enum rfbNewClientAction onNewClient(rfbClientPtr cl);
     static void onFrameStart(rfbClientPtr cl);
     static void onFrameDone(rfbClientPtr cl, int result);
-    static void rfbLogger(const char *format, ...);
+    static void rfbLogger(const char* format, ...);
+
+    int mArgc;
+    char** mArgv;
 
     bool mRunning;
     bool mFrameAvailable;
     bool mRotate;
     bool mVDSActive;
-    bool mInputReconfigPending;
 
     Mutex mEventMutex;
     Mutex mUpdateMutex;
 
     Condition mEventCond;
 
-    rfbScreenInfoPtr mVNCScreen;
-    uint8_t *mVNCBuf;
-
-    int mWidth, mHeight;
-
-    sp<IBinder> mMainDpy;
-
-    int mArgc;
-    char **mArgv;
+    int mWidth, mHeight, mOrientation;
 
     size_t mClientCount;
 
-    int mOrientation;
+    // Framebuffer
+    uint8_t* mVNCBuf;
 
-    sp<FrameListener> mListener;
+    // Server instance
+    rfbScreenInfoPtr mVNCScreen;
+
+    // Primary display
+    sp<IBinder> mMainDpy;
+
+    // Virtual display
+    sp<IBinder> mDpy;
 
     // Producer side of queue, passed into the virtual display.
     sp<IGraphicBufferProducer> mProducer;
@@ -110,10 +109,8 @@ private:
     // This receives frames from the virtual display and makes them available
     sp<CpuConsumer> mCpuConsumer;
 
-    // The virtual display instance
-    sp<IBinder> mDpy;
-
+    // Consumer callback
+    sp<FrameListener> mListener;
 };
-
 };
 #endif

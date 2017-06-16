@@ -247,7 +247,7 @@ void InputDevice::pointerEvent(int buttonMask, int x, int y, rfbClientPtr /* cl 
         inject(EV_ABS, ABS_Y, y);
         inject(EV_SYN, SYN_REPORT, 0);
 
-    } else if (buttonMask & 1) { // left btn clicked
+    } else if (buttonMask & 1) {  // left btn clicked
         mLeftClicked = true;
 
         inject(EV_ABS, ABS_X, x);
