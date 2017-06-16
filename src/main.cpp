@@ -15,11 +15,22 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+#include <csignal>
+
 #include "VNCFlinger.h"
 
 using namespace android;
 
+static VNCFlinger* VNC;
+
+static void onSignal(int /* signal */) {
+    VNC->stop();
+}
+
 int main(int argc, char** argv) {
-    VNCFlinger flinger(argc, argv);
-    flinger.start();
+    std::signal(SIGINT, onSignal);
+    std::signal(SIGHUP, onSignal);
+
+    VNC = new VNCFlinger(argc, argv);
+    VNC->start();
 }

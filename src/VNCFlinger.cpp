@@ -47,9 +47,25 @@ status_t VNCFlinger::start() {
 
     rfbRunEventLoop(mVNCScreen, -1, true);
 
-    ALOGD("VNCFlinger is running!");
+    ALOGD("VNCFlinger ready to fling");
 
     eventLoop();
+
+    ALOGI("VNCFlinger has left the building");
+
+    return NO_ERROR;
+}
+
+status_t VNCFlinger::stop() {
+    Mutex::Autolock _L(mEventMutex);
+
+    ALOGV("Shutting down");
+
+    destroyVirtualDisplayLocked();
+    mClientCount = 0;
+    mRunning = false;
+
+    mEventCond.signal();
 
     return NO_ERROR;
 }
@@ -115,6 +131,10 @@ status_t VNCFlinger::createVirtualDisplay() {
 }
 
 status_t VNCFlinger::destroyVirtualDisplayLocked() {
+    if (!mVDSActive) {
+        return NO_INIT;
+    }
+
     mCpuConsumer.clear();
     mProducer.clear();
     SurfaceComposerClient::destroyDisplay(mDpy);
@@ -161,17 +181,6 @@ status_t VNCFlinger::createVNCServer() {
     rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
 
     return err;
-}
-
-status_t VNCFlinger::stop() {
-    Mutex::Autolock _L(mEventMutex);
-
-    mClientCount = 0;
-    mRunning = false;
-
-    mEventCond.signal();
-
-    return NO_ERROR;
 }
 
 size_t VNCFlinger::addClient() {
