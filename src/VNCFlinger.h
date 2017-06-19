@@ -20,18 +20,18 @@
 
 #include <gui/CpuConsumer.h>
 #include <ui/DisplayInfo.h>
+#include <utils/String8.h>
 
 #include <rfb/rfb.h>
 
-#define VNC_PORT 5901
+#define VNC_AUTH_FILE "/data/system/vncauth"
 #define NUM_BUFS 1
 
 namespace android {
 
-class VNCFlinger {
+class VNCFlinger : public RefBase {
   public:
-    VNCFlinger(int argc, char** argv) : mArgc(argc), mArgv(argv), mOrientation(-1) {
-    }
+    VNCFlinger();
 
     virtual ~VNCFlinger() {
     }
@@ -41,6 +41,12 @@ class VNCFlinger {
 
     virtual size_t addClient();
     virtual size_t removeClient();
+
+    virtual status_t setListenAddress(String8& address, bool v6);
+    virtual status_t setPort(unsigned int port);
+
+    virtual status_t clearPassword();
+    virtual status_t setPassword(String8& passwd);
 
   private:
     class FrameListener : public CpuConsumer::FrameAvailableListener {
@@ -60,7 +66,9 @@ class VNCFlinger {
 
     virtual status_t createVirtualDisplay();
     virtual status_t destroyVirtualDisplayLocked();
+
     virtual status_t createVNCServer();
+    virtual status_t startVNCServer();
 
     virtual void processFrame();
 
@@ -74,9 +82,6 @@ class VNCFlinger {
     static void onFrameStart(rfbClientPtr cl);
     static void onFrameDone(rfbClientPtr cl, int result);
     static void rfbLogger(const char* format, ...);
-
-    int mArgc;
-    char** mArgv;
 
     bool mRunning;
     bool mFrameAvailable;

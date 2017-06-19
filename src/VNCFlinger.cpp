@@ -31,15 +31,67 @@
 
 using namespace android;
 
+VNCFlinger::VNCFlinger() {
+    mOrientation = -1;
+    mMainDpy = SurfaceComposerClient::getBuiltInDisplay(ISurfaceComposer::eDisplayIdMain);
+    updateDisplayProjection();
+
+    createVNCServer();
+
+    String8 v4("127.0.0.1");
+    String8 v6("::1");
+
+    setListenAddress(v4, false);
+    setListenAddress(v6, true);
+}
+
+status_t VNCFlinger::setListenAddress(String8& address, bool v6) {
+    if (v6) {
+        mVNCScreen->listen6Interface = const_cast<char *>(address.string());
+        return NO_ERROR;
+    }
+    if (!rfbStringToAddr(const_cast<char *>(address.string()), &(mVNCScreen->listenInterface))) {
+        return BAD_VALUE;
+    }
+    return NO_ERROR;
+}
+
+status_t VNCFlinger::setPort(unsigned int port) {
+    if (port > 65535) {
+        port = 0;
+    }
+    if (port == 0) {
+        mVNCScreen->autoPort = 1;
+    } else {
+        mVNCScreen->autoPort = 0;
+        mVNCScreen->port = port;
+        mVNCScreen->ipv6port = port;
+    }
+    return NO_ERROR;
+}
+
+status_t VNCFlinger::clearPassword() {
+    std::remove(VNC_AUTH_FILE);
+    ALOGW("Password authentication disabled");
+    return OK;
+}
+
+status_t VNCFlinger::setPassword(String8& passwd) {
+    String8 path(VNC_AUTH_FILE);
+    if (rfbEncryptAndStorePasswd(const_cast<char *>(passwd.string()),
+                                 const_cast<char *>(path.string())) != 0) {
+        ALOGE("Failed to set password");
+        return BAD_VALUE;
+    }
+    ALOGI("Password has been set");
+    return OK;
+}
+
 status_t VNCFlinger::start() {
     sp<ProcessState> self = ProcessState::self();
     self->startThreadPool();
 
-    mMainDpy = SurfaceComposerClient::getBuiltInDisplay(ISurfaceComposer::eDisplayIdMain);
-
-    updateDisplayProjection();
-
-    status_t err = createVNCServer();
+    status_t err = startVNCServer();
     if (err != NO_ERROR) {
         ALOGE("Failed to start VNCFlinger: err=%d", err);
         return err;
@@ -60,6 +112,8 @@ status_t VNCFlinger::stop() {
     Mutex::Autolock _L(mEventMutex);
 
     ALOGV("Shutting down");
+
+    rfbShutdownServer(mVNCScreen, true);
 
     destroyVirtualDisplayLocked();
     mClientCount = 0;
@@ -154,7 +208,7 @@ status_t VNCFlinger::createVNCServer() {
     rfbErr = VNCFlinger::rfbLogger;
 
     // 32-bit color
-    mVNCScreen = rfbGetScreen(&mArgc, mArgv, mWidth, mHeight, 8, 3, 4);
+    mVNCScreen = rfbGetScreen(0, NULL, mWidth, mHeight, 8, 3, 4);
     if (mVNCScreen == NULL) {
         ALOGE("Unable to create VNCScreen");
         return NO_INIT;
@@ -168,7 +222,7 @@ status_t VNCFlinger::createVNCServer() {
     mVNCScreen->desktopName = "VNCFlinger";
     mVNCScreen->alwaysShared = TRUE;
     mVNCScreen->httpDir = NULL;
-    mVNCScreen->port = VNC_PORT;
+    mVNCScreen->authPasswdData = (void *)VNC_AUTH_FILE;
     mVNCScreen->newClientHook = (rfbNewClientHookPtr)VNCFlinger::onNewClient;
     mVNCScreen->kbdAddEvent = InputDevice::onKeyEvent;
     mVNCScreen->ptrAddEvent = InputDevice::onPointerEvent;
@@ -179,12 +233,17 @@ status_t VNCFlinger::createVNCServer() {
     mVNCScreen->handleEventsEagerly = true;
     mVNCScreen->deferUpdateTime = 1;
     mVNCScreen->screenData = this;
+
+    return err;
+}
+
+status_t VNCFlinger::startVNCServer() {
     rfbInitServer(mVNCScreen);
 
     /* Mark as dirty since we haven't sent any updates at all yet. */
     rfbMarkRectAsModified(mVNCScreen, 0, 0, mWidth, mHeight);
 
-    return err;
+    return NO_ERROR;
 }
 
 size_t VNCFlinger::addClient() {
