@@ -23,6 +23,7 @@
 #include <utils/String8.h>
 
 #include <rfb/rfb.h>
+#undef max
 
 #define VNC_AUTH_FILE "/data/system/vncauth"
 #define NUM_BUFS 1
@@ -42,11 +43,12 @@ class VNCFlinger : public RefBase {
     virtual size_t addClient();
     virtual size_t removeClient();
 
-    virtual status_t setListenAddress(String8& address, bool v6);
     virtual status_t setPort(unsigned int port);
+    virtual status_t setV4Address(const String8& address);
+    virtual status_t setV6Address(const String8& address);
 
     virtual status_t clearPassword();
-    virtual status_t setPassword(String8& passwd);
+    virtual status_t setPassword(const String8& passwd);
 
   private:
     class FrameListener : public CpuConsumer::FrameAvailableListener {

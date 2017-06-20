@@ -7,6 +7,9 @@ LOCAL_SRC_FILES := \
     src/VNCFlinger.cpp \
     src/main.cpp
 
+LOCAL_SRC_FILES += \
+    aidl/org/chemlab/IVNCService.aidl
+
 LOCAL_C_INCLUDES += \
     $(LOCAL_PATH)/src \
     external/libvncserver \

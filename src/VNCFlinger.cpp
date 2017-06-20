@@ -41,18 +41,20 @@ VNCFlinger::VNCFlinger() {
     String8 v4("127.0.0.1");
     String8 v6("::1");
 
-    setListenAddress(v4, false);
-    setListenAddress(v6, true);
+    setV4Address(v4);
+    setV6Address(v6);
 }
 
-status_t VNCFlinger::setListenAddress(String8& address, bool v6) {
-    if (v6) {
-        mVNCScreen->listen6Interface = const_cast<char *>(address.string());
-        return NO_ERROR;
-    }
+status_t VNCFlinger::setV4Address(const String8& address) {
     if (!rfbStringToAddr(const_cast<char *>(address.string()), &(mVNCScreen->listenInterface))) {
         return BAD_VALUE;
     }
+    return NO_ERROR;
+}
+
+status_t VNCFlinger::setV6Address(const String8& address) {
+    ALOGD("v6: %s", const_cast<char *>(address.string()));
+    mVNCScreen->listen6Interface = const_cast<char *>(address.string());
     return NO_ERROR;
 }
 
@@ -76,7 +78,7 @@ status_t VNCFlinger::clearPassword() {
     return OK;
 }
 
-status_t VNCFlinger::setPassword(String8& passwd) {
+status_t VNCFlinger::setPassword(const String8& passwd) {
     String8 path(VNC_AUTH_FILE);
     if (rfbEncryptAndStorePasswd(const_cast<char *>(passwd.string()),
                                  const_cast<char *>(path.string())) != 0) {

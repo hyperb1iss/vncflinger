@@ -19,7 +19,10 @@
 #include <csignal>
 #include <iostream>
 
+#include <binder/IServiceManager.h>
+
 #include "VNCFlinger.h"
+#include "VNCService.h"
 
 using namespace android;
 
@@ -84,7 +87,7 @@ static void parseArgs(int argc, char** argv) {
 
             case '4':
                 arg = optarg;
-                if (gVNC->setListenAddress(arg, false) != OK) {
+                if (gVNC->setV4Address(arg) != OK) {
                     std::cerr << "Failed to set IPv4 address\n";
                     exit(1);
                 }
@@ -92,14 +95,13 @@ static void parseArgs(int argc, char** argv) {
 
             case '6':
                 arg = optarg;
-                if (gVNC->setListenAddress(arg, true) != OK) {
+                if (gVNC->setV6Address(arg) != OK) {
                     std::cerr << "Failed to set IPv6 address\n";
                     exit(1);
                 }
                 break;
 
             case 'p':
-                std::cerr << "port=" << optarg << std::endl;
                 if (gVNC->setPort(std::stoi(optarg)) != OK) {
                     std::cerr << "Failed to set port\n";
                     exit(1);
@@ -126,6 +128,9 @@ int main(int argc, char** argv) {
     gVNC = new VNCFlinger();
 
     parseArgs(argc, argv);
+
+    // binder interface
+    defaultServiceManager()->addService(String16("vnc"), new VNCService(gVNC));
 
     gVNC->start();
 }
