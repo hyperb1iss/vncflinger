@@ -28,17 +28,19 @@ using namespace android;
 
 static sp<VNCFlinger> gVNC;
 
-static const char* const shortOpts = "4:6:p:s:vh";
+static const char* const shortOpts = "4:6:p:s:l:vh";
 static const option longOpts[] = {
     {"listen", 1, nullptr, '4'},
     {"listen6", 1, nullptr, '6'},
     {"port", 1, nullptr, 'p'},
     {"password", 1, nullptr, 's'},
+    {"scale", 1, nullptr, 'l'},
     {"version", 0, nullptr, 'v'},
     {"help", 0, nullptr, 'h'},
 };
 
-static void onSignal(int /* signal */) {
+static void onSignal(int signal) {
+    ALOGV("Shutting down on signal %d", signal);
     gVNC->stop();
 }
 
@@ -54,6 +56,7 @@ static void printHelp() {
               << "  -p <num>         Port to listen on (default: 5900)\n"
               << "  -s <pass>        Store server password\n"
               << "  -c               Clear server password\n"
+              << "  -l <scale>       Scaling value (default: 1.0)\n"
               << "  -v               Show server version\n"
               << "  -h               Show help\n\n";
     exit(1);
@@ -108,6 +111,13 @@ static void parseArgs(int argc, char** argv) {
                 }
                 break;
 
+            case 'l':
+                if (gVNC->setScale(std::stof(optarg)) != OK) {
+                    std::cerr << "Invalid scaling value (must be between 0.0 and 2.0)\n";
+                    exit(1);
+                }
+                break;
+
             case 'v':
                 printVersion();
                 break;
@@ -133,4 +143,5 @@ int main(int argc, char** argv) {
     defaultServiceManager()->addService(String16("vnc"), new VNCService(gVNC));
 
     gVNC->start();
+    gVNC.clear();
 }

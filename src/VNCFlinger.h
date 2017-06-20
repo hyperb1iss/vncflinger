@@ -46,6 +46,7 @@ class VNCFlinger : public RefBase {
     virtual status_t setPort(unsigned int port);
     virtual status_t setV4Address(const String8& address);
     virtual status_t setV6Address(const String8& address);
+    virtual status_t setScale(float scale);
 
     virtual status_t clearPassword();
     virtual status_t setPassword(const String8& passwd);
@@ -96,7 +97,9 @@ class VNCFlinger : public RefBase {
     Condition mEventCond;
 
     uint32_t mWidth, mHeight;
+    uint32_t mSourceWidth, mSourceHeight;
     int32_t mOrientation;
+    float mScale;
 
     size_t mClientCount;
 

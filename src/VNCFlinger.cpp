@@ -26,6 +26,8 @@
 #include <gui/ISurfaceComposer.h>
 #include <gui/SurfaceComposerClient.h>
 
+#include <ui/PixelFormat.h>
+
 #include "InputDevice.h"
 #include "VNCFlinger.h"
 
@@ -33,6 +35,7 @@ using namespace android;
 
 VNCFlinger::VNCFlinger() {
     mOrientation = -1;
+    mScale = 1.0f;
     mMainDpy = SurfaceComposerClient::getBuiltInDisplay(ISurfaceComposer::eDisplayIdMain);
     updateDisplayProjection();
 
@@ -53,7 +56,6 @@ status_t VNCFlinger::setV4Address(const String8& address) {
 }
 
 status_t VNCFlinger::setV6Address(const String8& address) {
-    ALOGD("v6: %s", const_cast<char *>(address.string()));
     mVNCScreen->listen6Interface = const_cast<char *>(address.string());
     return NO_ERROR;
 }
@@ -69,6 +71,15 @@ status_t VNCFlinger::setPort(unsigned int port) {
         mVNCScreen->port = port;
         mVNCScreen->ipv6port = port;
     }
+    return NO_ERROR;
+}
+
+status_t VNCFlinger::setScale(float scale) {
+    if (scale <= 0.0f || scale > 2.0f) {
+        return BAD_VALUE;
+    }
+    mScale = scale;
+    updateDisplayProjection();
     return NO_ERROR;
 }
 
@@ -112,12 +123,12 @@ status_t VNCFlinger::start() {
 
 status_t VNCFlinger::stop() {
     Mutex::Autolock _L(mEventMutex);
-
     ALOGV("Shutting down");
 
-    rfbShutdownServer(mVNCScreen, true);
+    rfbShutdownServer(mVNCScreen, false);
 
     destroyVirtualDisplayLocked();
+
     mClientCount = 0;
     mRunning = false;
 
@@ -167,7 +178,8 @@ status_t VNCFlinger::createVirtualDisplay() {
     mCpuConsumer = new CpuConsumer(consumer, NUM_BUFS);
     mCpuConsumer->setName(String8("vds-to-cpu"));
     mCpuConsumer->setDefaultBufferSize(mWidth, mHeight);
-    mProducer->setMaxDequeuedBufferCount(4);
+    mProducer->setMaxDequeuedBufferCount(1);
+    consumer->setDefaultBufferFormat(PIXEL_FORMAT_RGBX_8888);
 
     mListener = new FrameListener(this);
     mCpuConsumer->setFrameAvailableListener(mListener);
@@ -176,7 +188,9 @@ status_t VNCFlinger::createVirtualDisplay() {
 
     SurfaceComposerClient::openGlobalTransaction();
     SurfaceComposerClient::setDisplaySurface(mDpy, mProducer);
-    // setDisplayProjection(mDpy, mainDpyInfo);
+    Rect displayRect(0, 0, mSourceWidth, mSourceHeight);
+    Rect outRect(0, 0, mWidth, mHeight);
+    SurfaceComposerClient::setDisplayProjection(mDpy, 0, displayRect, outRect);
     SurfaceComposerClient::setDisplayLayerStack(mDpy, 0);  // default stack
     SurfaceComposerClient::closeGlobalTransaction();
 
@@ -232,8 +246,9 @@ status_t VNCFlinger::createVNCServer() {
     mVNCScreen->displayFinishedHook = (rfbDisplayFinishedHookPtr)VNCFlinger::onFrameDone;
     mVNCScreen->serverFormat.trueColour = true;
     mVNCScreen->serverFormat.bitsPerPixel = 32;
+    mVNCScreen->serverFormat.depth = 24;
     mVNCScreen->handleEventsEagerly = true;
-    mVNCScreen->deferUpdateTime = 1;
+    mVNCScreen->deferUpdateTime = 0;
     mVNCScreen->screenData = this;
 
     return err;
@@ -342,16 +357,24 @@ bool VNCFlinger::updateDisplayProjection() {
         sourceWidth = info.h;
     }
 
-    if (mWidth == sourceWidth && mHeight == sourceHeight && mOrientation == info.orientation) {
+    uint32_t width = sourceWidth * mScale;
+    uint32_t height = sourceHeight * mScale;
+
+    if (mSourceWidth == sourceWidth && mSourceHeight == sourceHeight &&
+            mWidth == width && mHeight == height &&
+            mOrientation == info.orientation) {
         return false;
     }
 
-    ALOGD("Display dimensions: %dx%d orientation=%d", sourceWidth, sourceHeight, info.orientation);
-
-    // orientation change
-    mWidth = sourceWidth;
-    mHeight = sourceHeight;
+    // orientation / resolution change
+    mSourceWidth = sourceWidth;
+    mSourceHeight = sourceHeight;
+    mWidth = width;
+    mHeight = height;
     mOrientation = info.orientation;
+
+    ALOGV("Dimensions: %dx%d [out: %dx%d, scale: %f] orientation=%d",
+            mSourceWidth, mSourceHeight, mWidth, mHeight, mScale, mOrientation);
 
     if (!mVDSActive) {
         return true;
@@ -361,6 +384,7 @@ bool VNCFlinger::updateDisplayProjection() {
     // on the fly without forcing surfaceflinger to tear it down
     destroyVirtualDisplayLocked();
     createVirtualDisplay();
+
     return false;
 }
 
