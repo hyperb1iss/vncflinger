@@ -28,12 +28,13 @@ using namespace android;
 
 static sp<VNCFlinger> gVNC;
 
-static const char* const shortOpts = "4:6:p:s:l:vh";
+static const char* const shortOpts = "4:6:p:cs:l:vh";
 static const option longOpts[] = {
     {"listen", 1, nullptr, '4'},
     {"listen6", 1, nullptr, '6'},
     {"port", 1, nullptr, 'p'},
     {"password", 1, nullptr, 's'},
+    {"clear-password", 0, nullptr, 'c'},
     {"scale", 1, nullptr, 'l'},
     {"version", 0, nullptr, 'v'},
     {"help", 0, nullptr, 'h'},

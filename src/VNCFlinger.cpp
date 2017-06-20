@@ -18,6 +18,8 @@
 #define LOG_TAG "VNCFlinger"
 #include <utils/Log.h>
 
+#include <fstream>
+
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
@@ -86,6 +88,7 @@ status_t VNCFlinger::setScale(float scale) {
 status_t VNCFlinger::clearPassword() {
     std::remove(VNC_AUTH_FILE);
     ALOGW("Password authentication disabled");
+    mVNCScreen->authPasswdData = NULL;
     return OK;
 }
 
@@ -97,6 +100,7 @@ status_t VNCFlinger::setPassword(const String8& passwd) {
         return BAD_VALUE;
     }
     ALOGI("Password has been set");
+    mVNCScreen->authPasswdData = (void *)VNC_AUTH_FILE;
     return OK;
 }
 
@@ -238,7 +242,6 @@ status_t VNCFlinger::createVNCServer() {
     mVNCScreen->desktopName = "VNCFlinger";
     mVNCScreen->alwaysShared = TRUE;
     mVNCScreen->httpDir = NULL;
-    mVNCScreen->authPasswdData = (void *)VNC_AUTH_FILE;
     mVNCScreen->newClientHook = (rfbNewClientHookPtr)VNCFlinger::onNewClient;
     mVNCScreen->kbdAddEvent = InputDevice::onKeyEvent;
     mVNCScreen->ptrAddEvent = InputDevice::onPointerEvent;
@@ -250,6 +253,11 @@ status_t VNCFlinger::createVNCServer() {
     mVNCScreen->handleEventsEagerly = true;
     mVNCScreen->deferUpdateTime = 0;
     mVNCScreen->screenData = this;
+
+    std::ifstream authFile(VNC_AUTH_FILE);
+    if ((bool)authFile) {
+        mVNCScreen->authPasswdData = (void *)VNC_AUTH_FILE;
+    }
 
     return err;
 }
