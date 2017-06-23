@@ -1,148 +1,168 @@
-//
-// vncflinger - Copyright (C) 2017 Steve Kondik
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
-//
-#include <getopt.h>
+#define LOG_TAG "VNCFlinger"
+#include <utils/Log.h>
 
-#include <csignal>
-#include <iostream>
+#include <fcntl.h>
 
-#include <binder/IServiceManager.h>
+#include "AndroidDesktop.h"
 
-#include "VNCFlinger.h"
-#include "VNCService.h"
+#include <network/Socket.h>
+#include <network/TcpSocket.h>
+#include <rfb/Configuration.h>
+#include <rfb/Logger_android.h>
+#include <rfb/VNCServerST.h>
+#include <rfb/util.h>
 
-using namespace android;
+using namespace vncflinger;
 
-static sp<VNCFlinger> gVNC;
+static char* gProgramName;
+static bool gCaughtSignal = false;
 
-static const char* const shortOpts = "4:6:p:cs:l:vh";
-static const option longOpts[] = {
-    {"listen", 1, nullptr, '4'},
-    {"listen6", 1, nullptr, '6'},
-    {"port", 1, nullptr, 'p'},
-    {"password", 1, nullptr, 's'},
-    {"clear-password", 0, nullptr, 'c'},
-    {"scale", 1, nullptr, 'l'},
-    {"version", 0, nullptr, 'v'},
-    {"help", 0, nullptr, 'h'},
-};
+static rfb::IntParameter rfbport("rfbport", "TCP port to listen for RFB protocol", 5900);
 
-static void onSignal(int signal) {
-    ALOGV("Shutting down on signal %d", signal);
-    gVNC->stop();
+static void printVersion(FILE* fp) {
+    fprintf(fp, "VNCFlinger 1.0");
 }
 
-static void printVersion() {
-    std::cout << "VNCFlinger-" << VNCFLINGER_VERSION << std::endl;
-    exit(0);
-}
-
-static void printHelp() {
-    std::cout << "Usage: vncflinger [OPTIONS]\n\n"
-              << "  -4 <addr>        IPv4 address to listen (default: localhost)\n"
-              << "  -6 <addr>        IPv6 address to listen (default: localhost)\n"
-              << "  -p <num>         Port to listen on (default: 5900)\n"
-              << "  -s <pass>        Store server password\n"
-              << "  -c               Clear server password\n"
-              << "  -l <scale>       Scaling value (default: 1.0)\n"
-              << "  -v               Show server version\n"
-              << "  -h               Show help\n\n";
+static void usage() {
+    printVersion(stderr);
+    fprintf(stderr, "\nUsage: %s [<parameters>]\n", gProgramName);
+    fprintf(stderr, "       %s --version\n", gProgramName);
+    fprintf(stderr,
+            "\n"
+            "Parameters can be turned on with -<param> or off with -<param>=0\n"
+            "Parameters which take a value can be specified as "
+            "-<param> <value>\n"
+            "Other valid forms are <param>=<value> -<param>=<value> "
+            "--<param>=<value>\n"
+            "Parameter names are case-insensitive.  The parameters are:\n\n");
+    rfb::Configuration::listParams(79, 14);
     exit(1);
 }
 
-static void parseArgs(int argc, char** argv) {
-    String8 arg;
-
-    while (true) {
-        const auto opt = getopt_long(argc, argv, shortOpts, longOpts, nullptr);
-
-        if (opt < 0) {
-            break;
-        }
-
-        switch (opt) {
-            case 's':
-                arg = optarg;
-                if (gVNC->setPassword(arg) != OK) {
-                    std::cerr << "Failed to set password\n";
-                    exit(1);
-                }
-                exit(0);
-
-            case 'c':
-                if (gVNC->clearPassword() != OK) {
-                    std::cerr << "Failed to clear password\n";
-                    exit(1);
-                }
-                exit(0);
-
-            case '4':
-                arg = optarg;
-                if (gVNC->setV4Address(arg) != OK) {
-                    std::cerr << "Failed to set IPv4 address\n";
-                    exit(1);
-                }
-                break;
-
-            case '6':
-                arg = optarg;
-                if (gVNC->setV6Address(arg) != OK) {
-                    std::cerr << "Failed to set IPv6 address\n";
-                    exit(1);
-                }
-                break;
-
-            case 'p':
-                if (gVNC->setPort(std::stoi(optarg)) != OK) {
-                    std::cerr << "Failed to set port\n";
-                    exit(1);
-                }
-                break;
-
-            case 'l':
-                if (gVNC->setScale(std::stof(optarg)) != OK) {
-                    std::cerr << "Invalid scaling value (must be between 0.0 and 2.0)\n";
-                    exit(1);
-                }
-                break;
-
-            case 'v':
-                printVersion();
-                break;
-
-            case 'h':
-            case '?':
-            default:
-                printHelp();
-                break;
-        }
-    }
-}
-
 int main(int argc, char** argv) {
-    std::signal(SIGINT, onSignal);
-    std::signal(SIGHUP, onSignal);
+    rfb::initAndroidLogger();
+    rfb::LogWriter::setLogParams("*:android:30");
 
-    gVNC = new VNCFlinger();
+    gProgramName = argv[0];
 
-    parseArgs(argc, argv);
+    rfb::Configuration::enableServerParams();
 
-    // binder interface
-    defaultServiceManager()->addService(String16("vnc"), new VNCService(gVNC));
+    for (int i = 1; i < argc; i++) {
+        if (rfb::Configuration::setParam(argv[i])) continue;
 
-    gVNC->start();
-    gVNC.clear();
+        if (argv[i][0] == '-') {
+            if (i + 1 < argc) {
+                if (rfb::Configuration::setParam(&argv[i][1], argv[i + 1])) {
+                    i++;
+                    continue;
+                }
+            }
+            if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "-version") == 0 ||
+                strcmp(argv[i], "--version") == 0) {
+                printVersion(stdout);
+                return 0;
+            }
+            usage();
+        }
+        usage();
+    }
+
+    std::list<network::TcpListener*> listeners;
+
+    try {
+        sp<AndroidDesktop> desktop = new AndroidDesktop();
+        rfb::VNCServerST server("vncflinger", desktop.get());
+        network::createTcpListeners(&listeners, 0, (int)rfbport);
+
+        int eventFd = desktop->getEventFd();
+        fcntl(eventFd, F_SETFL, O_NONBLOCK);
+
+        ALOGI("Listening on port %d", (int)rfbport);
+
+        while (!gCaughtSignal) {
+            int wait_ms;
+            struct timeval tv;
+            fd_set rfds, wfds;
+            std::list<network::Socket*> sockets;
+            std::list<network::Socket*>::iterator i;
+
+            FD_ZERO(&rfds);
+            FD_ZERO(&wfds);
+
+            FD_SET(eventFd, &rfds);
+            for (std::list<network::TcpListener*>::iterator i = listeners.begin();
+                 i != listeners.end(); i++)
+                FD_SET((*i)->getFd(), &rfds);
+
+            server.getSockets(&sockets);
+            int clients_connected = 0;
+            for (i = sockets.begin(); i != sockets.end(); i++) {
+                if ((*i)->isShutdown()) {
+                    server.removeSocket(*i);
+                    delete (*i);
+                } else {
+                    FD_SET((*i)->getFd(), &rfds);
+                    if ((*i)->outStream().bufferUsage() > 0) FD_SET((*i)->getFd(), &wfds);
+                    clients_connected++;
+                }
+            }
+
+            wait_ms = 0;
+
+            rfb::soonestTimeout(&wait_ms, server.checkTimeouts());
+
+            tv.tv_sec = wait_ms / 1000;
+            tv.tv_usec = (wait_ms % 1000) * 1000;
+
+            int n = select(FD_SETSIZE, &rfds, &wfds, 0, wait_ms ? &tv : NULL);
+
+            if (n < 0) {
+                if (errno == EINTR) {
+                    ALOGV("Interrupted select() system call");
+                    continue;
+                } else {
+                    throw rdr::SystemException("select", errno);
+                }
+            }
+
+            // Accept new VNC connections
+            for (std::list<network::TcpListener*>::iterator i = listeners.begin();
+                 i != listeners.end(); i++) {
+                if (FD_ISSET((*i)->getFd(), &rfds)) {
+                    network::Socket* sock = (*i)->accept();
+                    if (sock) {
+                        sock->outStream().setBlocking(false);
+                        server.addSocket(sock);
+                    } else {
+                        ALOGW("Client connection rejected");
+                    }
+                }
+            }
+
+            server.checkTimeouts();
+
+            // Client list could have been changed.
+            server.getSockets(&sockets);
+
+            // Nothing more to do if there are no client connections.
+            if (sockets.empty()) continue;
+
+            // Process events on existing VNC connections
+            for (i = sockets.begin(); i != sockets.end(); i++) {
+                if (FD_ISSET((*i)->getFd(), &rfds)) server.processSocketReadEvent(*i);
+                if (FD_ISSET((*i)->getFd(), &wfds)) server.processSocketWriteEvent(*i);
+            }
+
+            // Process events from the display
+            uint64_t eventVal;
+            int status = read(eventFd, &eventVal, sizeof(eventVal));
+            if (status > 0 && eventVal > 0) {
+                desktop->processFrames();
+            }
+        }
+
+    } catch (rdr::Exception& e) {
+        ALOGE("%s", e.str());
+        return 1;
+    }
 }

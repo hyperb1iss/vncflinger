@@ -18,6 +18,8 @@
 #define LOG_TAG "VNC-InputDevice"
 #include <utils/Log.h>
 
+#include <future>
+
 #include "InputDevice.h"
 
 #include <fcntl.h>
@@ -28,11 +30,8 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 
-#include <rfb/keysym.h>
-
 using namespace android;
 
-ANDROID_SINGLETON_STATIC_INSTANCE(InputDevice)
 
 static const struct UInputOptions {
     int cmd;
@@ -51,10 +50,15 @@ static const struct UInputOptions {
     {UI_SET_PROPBIT, INPUT_PROP_DIRECT},
 };
 
+status_t InputDevice::start_async(uint32_t width, uint32_t height) {
+    // don't block the caller since this can take a few seconds
+    std::async(&InputDevice::start, this, width, height);
+
+    return NO_ERROR;
+}
+
 status_t InputDevice::start(uint32_t width, uint32_t height) {
     Mutex::Autolock _l(mLock);
-
-    status_t err = OK;
 
     mLeftClicked = mMiddleClicked = mRightClicked = false;
 
@@ -111,6 +115,8 @@ status_t InputDevice::start(uint32_t width, uint32_t height) {
         goto err_ioctl;
     }
 
+    mOpened = true;
+
     ALOGD("Virtual input device created successfully (%dx%d)", width, height);
     return NO_ERROR;
 
@@ -124,11 +130,14 @@ err_ioctl:
 
 status_t InputDevice::reconfigure(uint32_t width, uint32_t height) {
     stop();
-    return start(width, height);
+    return start_async(width, height);
 }
 
 status_t InputDevice::stop() {
     Mutex::Autolock _l(mLock);
+
+    mOpened = false;
+
     if (mFD < 0) {
         return OK;
     }
@@ -187,20 +196,15 @@ status_t InputDevice::click(uint16_t code) {
     return release(code);
 }
 
-void InputDevice::onKeyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl) {
-    InputDevice::getInstance().keyEvent(down, key, cl);
-}
-
-void InputDevice::keyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl) {
+void InputDevice::keyEvent(bool down, uint32_t key) {
     int code;
     int sh = 0;
     int alt = 0;
 
-    if (mFD < 0) return;
-
     Mutex::Autolock _l(mLock);
+    if (!mOpened) return;
 
-    if ((code = keysym2scancode(key, cl, &sh, &alt))) {
+    if ((code = keysym2scancode(key, &sh, &alt))) {
         int ret = 0;
 
         if (key && down) {
@@ -231,16 +235,11 @@ void InputDevice::keyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl) {
     }
 }
 
-void InputDevice::onPointerEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
-    InputDevice::getInstance().pointerEvent(buttonMask, x, y, cl);
-}
-
-void InputDevice::pointerEvent(int buttonMask, int x, int y, rfbClientPtr /* cl  */) {
-    if (mFD < 0) return;
+void InputDevice::pointerEvent(int buttonMask, int x, int y) {
+    Mutex::Autolock _l(mLock);
+    if (!mOpened) return;
 
     ALOGV("pointerEvent: buttonMask=%x x=%d y=%d", buttonMask, x, y);
-
-    Mutex::Autolock _l(mLock);
 
     if ((buttonMask & 1) && mLeftClicked) {  // left btn clicked and moving
         inject(EV_ABS, ABS_X, x);
@@ -314,7 +313,7 @@ static const int spec3sh[] = {0, 0, 0, 1, 1, 0};
 static const int spec4[] = {26, 43, 27, 215, 14};
 static const int spec4sh[] = {1, 1, 1, 1, 0};
 
-int InputDevice::keysym2scancode(rfbKeySym c, rfbClientPtr cl, int* sh, int* alt) {
+int InputDevice::keysym2scancode(uint32_t c, int* sh, int* alt) {
     int real = 1;
     if ('a' <= c && c <= 'z') return qwerty[c - 'a'];
     if ('A' <= c && c <= 'Z') {
@@ -372,9 +371,6 @@ int InputDevice::keysym2scancode(rfbKeySym c, rfbClientPtr cl, int* sh, int* alt
         //	return 232;// end -> DPAD_CENTER (ball click)
         case 0xff50:
             return KEY_HOME;  // home
-        case 0xFFC8:
-            rfbShutdownServer(cl->screen, TRUE);
-            return 0;  // F11 disconnect
         case 0xffff:
             return 158;  // del -> back
         case 0xff55:

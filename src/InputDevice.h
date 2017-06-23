@@ -20,32 +20,33 @@
 
 #include <utils/Errors.h>
 #include <utils/Mutex.h>
-#include <utils/Singleton.h>
+#include <utils/RefBase.h>
 
 #include <linux/uinput.h>
-#include <rfb/rfb.h>
+
 
 #define UINPUT_DEVICE "/dev/uinput"
 
 namespace android {
 
-class InputDevice : public Singleton<InputDevice> {
-    friend class Singleton;
-
+class InputDevice : public RefBase {
   public:
     virtual status_t start(uint32_t width, uint32_t height);
+    virtual status_t start_async(uint32_t width, uint32_t height);
     virtual status_t stop();
     virtual status_t reconfigure(uint32_t width, uint32_t height);
 
-    static void onKeyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl);
-    static void onPointerEvent(int buttonMask, int x, int y, rfbClientPtr cl);
+    virtual void keyEvent(bool down, uint32_t key);
+    virtual void pointerEvent(int buttonMask, int x, int y);
 
     InputDevice() : mFD(-1) {
     }
     virtual ~InputDevice() {
+        stop();
     }
 
   private:
+
     status_t inject(uint16_t type, uint16_t code, int32_t value);
     status_t injectSyn(uint16_t type, uint16_t code, int32_t value);
     status_t movePointer(int32_t x, int32_t y);
@@ -54,14 +55,12 @@ class InputDevice : public Singleton<InputDevice> {
     status_t release(uint16_t code);
     status_t click(uint16_t code);
 
-    void keyEvent(rfbBool down, rfbKeySym key, rfbClientPtr cl);
-    void pointerEvent(int buttonMask, int x, int y, rfbClientPtr cl);
-
-    int keysym2scancode(rfbKeySym c, rfbClientPtr cl, int* sh, int* alt);
+    int keysym2scancode(uint32_t c, int* sh, int* alt);
 
     Mutex mLock;
 
     int mFD;
+    bool mOpened;
 
     struct uinput_user_dev mUserDev;
 
