@@ -10,20 +10,23 @@
 
 #include <gui/CpuConsumer.h>
 
+#include <ui/DisplayInfo.h>
+
 #include <rfb/PixelBuffer.h>
 #include <rfb/SDesktop.h>
 #include <rfb/VNCServerST.h>
 
+#include "AndroidPixelBuffer.h"
 #include "InputDevice.h"
-
+#include "VirtualDisplay.h"
 
 using namespace android;
 
 namespace vncflinger {
 
-static const rfb::PixelFormat pfRGBX(32, 24, false, true, 255, 255, 255, 0, 8, 16);
-
-class AndroidDesktop : public rfb::SDesktop, public RefBase {
+class AndroidDesktop : public rfb::SDesktop,
+                       public CpuConsumer::FrameAvailableListener,
+                       public AndroidPixelBuffer::BufferDimensionsListener {
   public:
     AndroidDesktop();
 
@@ -44,56 +47,22 @@ class AndroidDesktop : public rfb::SDesktop, public RefBase {
         return mEventFd;
     }
 
+    virtual void onBufferDimensionsChanged(uint32_t width, uint32_t height);
+
+    virtual void onFrameAvailable(const BufferItem& item);
+
   private:
-    class FrameListener : public CpuConsumer::FrameAvailableListener {
-      public:
-        FrameListener(AndroidDesktop* desktop) : mDesktop(desktop) {
-        }
-
-        virtual void onFrameAvailable(const BufferItem& item);
-
-      private:
-        FrameListener(FrameListener&) {
-        }
-        AndroidDesktop* mDesktop;
-    };
-
-    class AndroidPixelBuffer : public RefBase, public rfb::ManagedPixelBuffer {
-      public:
-        AndroidPixelBuffer(uint64_t width, uint64_t height)
-            : rfb::ManagedPixelBuffer(sRGBX, width, height) {
-        }
-    };
-
-    virtual status_t createVirtualDisplay();
-    virtual status_t destroyVirtualDisplay();
-
     virtual void notify();
 
-    virtual status_t updateDisplayProjection();
-    virtual bool updateFBSize(uint64_t width, uint64_t height);
-    virtual void processDesktopResize();
+    virtual status_t updateDisplayInfo();
 
-    uint64_t mSourceWidth, mSourceHeight;
-    uint64_t mWidth, mHeight;
     Rect mDisplayRect;
 
-    bool mRotated;
-
-    Mutex mMutex;
-
-    bool mFrameAvailable;
-    bool mProjectionChanged;
-    bool mRotate;
-    bool mVDSActive;
+    Mutex mLock;
 
     uint64_t mFrameNumber;
-    nsecs_t mFrameStartWhen;
 
     int mEventFd;
-
-    // Android virtual display is always 32-bit
-    static const rfb::PixelFormat sRGBX;
 
     // Server instance
     rfb::VNCServerST* mServer;
@@ -101,20 +70,12 @@ class AndroidDesktop : public rfb::SDesktop, public RefBase {
     // Pixel buffer
     sp<AndroidPixelBuffer> mPixels;
 
+    // Virtual display controller
+    sp<VirtualDisplay> mVirtualDisplay;
+
     // Primary display
     sp<IBinder> mMainDpy;
-
-    // Virtual display
-    sp<IBinder> mDpy;
-
-    // Producer side of queue, passed into the virtual display.
-    sp<IGraphicBufferProducer> mProducer;
-
-    // This receives frames from the virtual display and makes them available
-    sp<CpuConsumer> mCpuConsumer;
-
-    // Listener for virtual display buffers
-    sp<FrameListener> mListener;
+    DisplayInfo mDisplayInfo;
 
     // Virtual input device
     sp<InputDevice> mInputDevice;

@@ -5,6 +5,10 @@
 
 #include "AndroidDesktop.h"
 
+#include <binder/IPCThreadState.h>
+#include <binder/IServiceManager.h>
+#include <binder/ProcessState.h>
+
 #include <network/Socket.h>
 #include <network/TcpSocket.h>
 #include <rfb/Configuration.h>
@@ -13,6 +17,7 @@
 #include <rfb/util.h>
 
 using namespace vncflinger;
+using namespace android;
 
 static char* gProgramName;
 static bool gCaughtSignal = false;
@@ -66,6 +71,9 @@ int main(int argc, char** argv) {
         }
         usage();
     }
+
+    sp<ProcessState> self = ProcessState::self();
+    self->startThreadPool();
 
     std::list<network::TcpListener*> listeners;
 
@@ -157,6 +165,7 @@ int main(int argc, char** argv) {
             uint64_t eventVal;
             int status = read(eventFd, &eventVal, sizeof(eventVal));
             if (status > 0 && eventVal > 0) {
+                ALOGV("status=%d eventval=%lu", status, eventVal);
                 desktop->processFrames();
             }
         }

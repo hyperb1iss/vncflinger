@@ -3,8 +3,10 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := \
-    src/InputDevice.cpp \
     src/AndroidDesktop.cpp \
+    src/AndroidPixelBuffer.cpp \
+    src/InputDevice.cpp \
+    src/VirtualDisplay.cpp \
     src/main.cpp
 
 #LOCAL_SRC_FILES += \
