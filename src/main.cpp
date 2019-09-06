@@ -12,6 +12,7 @@
 #include <network/Socket.h>
 #include <network/TcpSocket.h>
 #include <rfb/Configuration.h>
+#include <rfb/LogWriter.h>
 #include <rfb/Logger_android.h>
 #include <rfb/VNCServerST.h>
 #include <rfb/util.h>
@@ -75,7 +76,7 @@ int main(int argc, char** argv) {
     sp<ProcessState> self = ProcessState::self();
     self->startThreadPool();
 
-    std::list<network::TcpListener*> listeners;
+    std::list<network::SocketListener*> listeners;
 
     try {
         sp<AndroidDesktop> desktop = new AndroidDesktop();
@@ -98,7 +99,7 @@ int main(int argc, char** argv) {
             FD_ZERO(&wfds);
 
             FD_SET(eventFd, &rfds);
-            for (std::list<network::TcpListener*>::iterator i = listeners.begin();
+            for (std::list<network::SocketListener*>::iterator i = listeners.begin();
                  i != listeners.end(); i++)
                 FD_SET((*i)->getFd(), &rfds);
 
@@ -117,7 +118,7 @@ int main(int argc, char** argv) {
 
             wait_ms = 0;
 
-            rfb::soonestTimeout(&wait_ms, server.checkTimeouts());
+            rfb::soonestTimeout(&wait_ms, rfb::Timer::checkTimeouts());
 
             tv.tv_sec = wait_ms / 1000;
             tv.tv_usec = (wait_ms % 1000) * 1000;
@@ -134,7 +135,7 @@ int main(int argc, char** argv) {
             }
 
             // Accept new VNC connections
-            for (std::list<network::TcpListener*>::iterator i = listeners.begin();
+            for (std::list<network::SocketListener*>::iterator i = listeners.begin();
                  i != listeners.end(); i++) {
                 if (FD_ISSET((*i)->getFd(), &rfds)) {
                     network::Socket* sock = (*i)->accept();
@@ -147,7 +148,7 @@ int main(int argc, char** argv) {
                 }
             }
 
-            server.checkTimeouts();
+            rfb::Timer::checkTimeouts();
 
             // Client list could have been changed.
             server.getSockets(&sockets);

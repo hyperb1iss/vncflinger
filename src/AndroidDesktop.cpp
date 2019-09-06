@@ -141,8 +141,8 @@ rfb::Point AndroidDesktop::getFbSize() {
     return rfb::Point(mPixels->width(), mPixels->height());
 }
 
-void AndroidDesktop::keyEvent(rdr::U32 key, bool down) {
-    mInputDevice->keyEvent(down, key);
+void AndroidDesktop::keyEvent(rdr::U32 keysym, __unused_attr rdr::U32 keycode, bool down) {
+    mInputDevice->keyEvent(down, keysym);
 }
 
 void AndroidDesktop::pointerEvent(const rfb::Point& pos, int buttonMask) {
@@ -189,4 +189,12 @@ void AndroidDesktop::onBufferDimensionsChanged(uint32_t width, uint32_t height) 
     rfb::ScreenSet screens;
     screens.add_screen(rfb::Screen(0, 0, 0, mPixels->width(), mPixels->height(), 0));
     mServer->setScreenLayout(screens);
+}
+
+void AndroidDesktop::queryConnection(network::Socket* sock, __unused_attr const char* userName) {
+    mServer->approveConnection(sock, true, NULL);
+}
+
+void AndroidDesktop::terminate() {
+    kill(getpid(), SIGTERM);
 }
