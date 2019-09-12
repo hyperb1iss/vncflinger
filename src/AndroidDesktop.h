@@ -14,7 +14,7 @@
 
 #include <rfb/PixelBuffer.h>
 #include <rfb/SDesktop.h>
-#include <rfb/VNCServerST.h>
+#include <rfb/ScreenSet.h>
 
 #include "AndroidPixelBuffer.h"
 #include "InputDevice.h"
@@ -36,7 +36,6 @@ class AndroidDesktop : public rfb::SDesktop,
     virtual void stop();
     virtual void terminate();
 
-    virtual rfb::Point getFbSize();
     virtual unsigned int setScreenLayout(int fb_width, int fb_height, const rfb::ScreenSet& layout);
 
     virtual void keyEvent(rdr::U32 keysym, rdr::U32 keycode, bool down);
@@ -59,6 +58,8 @@ class AndroidDesktop : public rfb::SDesktop,
 
     virtual status_t updateDisplayInfo();
 
+    virtual rfb::ScreenSet computeScreenLayout();
+
     Rect mDisplayRect;
 
     Mutex mLock;
@@ -68,7 +69,7 @@ class AndroidDesktop : public rfb::SDesktop,
     int mEventFd;
 
     // Server instance
-    rfb::VNCServerST* mServer;
+    rfb::VNCServer* mServer;
 
     // Pixel buffer
     sp<AndroidPixelBuffer> mPixels;

@@ -12,7 +12,6 @@
 #include <rfb/PixelFormat.h>
 #include <rfb/Rect.h>
 #include <rfb/ScreenSet.h>
-#include <rfb/VNCServerST.h>
 
 #include "AndroidDesktop.h"
 #include "AndroidPixelBuffer.h"
@@ -41,7 +40,7 @@ AndroidDesktop::~AndroidDesktop() {
 void AndroidDesktop::start(rfb::VNCServer* vs) {
     mMainDpy = SurfaceComposerClient::getBuiltInDisplay(ISurfaceComposer::eDisplayIdMain);
 
-    mServer = (rfb::VNCServerST*)vs;
+    mServer = vs;
 
     mPixels = new AndroidPixelBuffer();
     mPixels->setDimensionsChangedListener(this);
@@ -137,10 +136,6 @@ void AndroidDesktop::onFrameAvailable(const BufferItem& item) {
     notify();
 }
 
-rfb::Point AndroidDesktop::getFbSize() {
-    return rfb::Point(mPixels->width(), mPixels->height());
-}
-
 void AndroidDesktop::keyEvent(rdr::U32 keysym, __unused_attr rdr::U32 keycode, bool down) {
     mInputDevice->keyEvent(down, keysym);
 }
@@ -173,6 +168,13 @@ status_t AndroidDesktop::updateDisplayInfo() {
     return NO_ERROR;
 }
 
+rfb::ScreenSet AndroidDesktop::computeScreenLayout() {
+    rfb::ScreenSet screens;
+    screens.add_screen(rfb::Screen(0, 0, 0, mPixels->width(), mPixels->height(), 0));
+    return screens;
+    mServer->setScreenLayout(screens);
+}
+
 void AndroidDesktop::onBufferDimensionsChanged(uint32_t width, uint32_t height) {
     ALOGV("Dimensions changed: old=(%ux%u) new=(%ux%u)", mDisplayRect.getWidth(),
           mDisplayRect.getHeight(), width, height);
@@ -184,11 +186,8 @@ void AndroidDesktop::onBufferDimensionsChanged(uint32_t width, uint32_t height) 
 
     mInputDevice->reconfigure(mDisplayRect.getWidth(), mDisplayRect.getHeight());
 
-    mServer->setPixelBuffer(mPixels.get());
-
-    rfb::ScreenSet screens;
-    screens.add_screen(rfb::Screen(0, 0, 0, mPixels->width(), mPixels->height(), 0));
-    mServer->setScreenLayout(screens);
+    mServer->setPixelBuffer(mPixels.get(), computeScreenLayout());
+    mServer->setScreenLayout(computeScreenLayout());
 }
 
 void AndroidDesktop::queryConnection(network::Socket* sock, __unused_attr const char* userName) {
