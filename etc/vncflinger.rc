@@ -1,4 +1,4 @@
-service vncflinger /system/bin/vncflinger
+service vncflinger /system/bin/vncflinger -rfbunixpath /dev/socket/vncflinger 
     class late_start
     disabled
     user system

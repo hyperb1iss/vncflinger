@@ -11,6 +11,7 @@
 
 #include <network/Socket.h>
 #include <network/TcpSocket.h>
+#include <network/UnixSocket.h>
 #include <rfb/Configuration.h>
 #include <rfb/LogWriter.h>
 #include <rfb/Logger_android.h>
@@ -24,6 +25,9 @@ static char* gProgramName;
 static bool gCaughtSignal = false;
 
 static rfb::IntParameter rfbport("rfbport", "TCP port to listen for RFB protocol", 5900);
+static rfb::BoolParameter localhostOnly("localhost", "Only allow connections from localhost", false);
+static rfb::StringParameter rfbunixpath("rfbunixpath", "Unix socket to listen for RFB protocol", "");
+static rfb::IntParameter rfbunixmode("rfbunixmode", "Unix socket access mode", 0600);
 
 static void printVersion(FILE* fp) {
     fprintf(fp, "VNCFlinger 1.0");
@@ -81,12 +85,21 @@ int main(int argc, char** argv) {
     try {
         sp<AndroidDesktop> desktop = new AndroidDesktop();
         rfb::VNCServerST server("vncflinger", desktop.get());
-        network::createTcpListeners(&listeners, 0, (int)rfbport);
+
+        if (rfbunixpath.getValueStr()[0] != '\0') {
+            listeners.push_back(new network::UnixListener(rfbunixpath, rfbunixmode));
+            ALOGI("Listening on %s (mode %04o)", (const char*)rfbunixpath, (int)rfbunixmode);
+        } else {
+            if (localhostOnly) {
+                network::createLocalTcpListeners(&listeners, (int)rfbport);
+            } else {
+                network::createTcpListeners(&listeners, 0, (int)rfbport);
+                ALOGI("Listening on port %d", (int)rfbport);
+            }
+        }
 
         int eventFd = desktop->getEventFd();
         fcntl(eventFd, F_SETFL, O_NONBLOCK);
-
-        ALOGI("Listening on port %d", (int)rfbport);
 
         while (!gCaughtSignal) {
             int wait_ms;
@@ -111,7 +124,9 @@ int main(int argc, char** argv) {
                     delete (*i);
                 } else {
                     FD_SET((*i)->getFd(), &rfds);
-                    if ((*i)->outStream().bufferUsage() > 0) FD_SET((*i)->getFd(), &wfds);
+                    if ((*i)->outStream().bufferUsage() > 0) {
+                        FD_SET((*i)->getFd(), &wfds);
+                    }
                     clients_connected++;
                 }
             }
@@ -169,6 +184,7 @@ int main(int argc, char** argv) {
                 ALOGV("status=%d eventval=%lu", status, eventVal);
                 desktop->processFrames();
             }
+
         }
 
     } catch (rdr::Exception& e) {
