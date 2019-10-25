@@ -5,6 +5,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
     src/AndroidDesktop.cpp \
     src/AndroidPixelBuffer.cpp \
+    src/AndroidSocket.cpp \
     src/InputDevice.cpp \
     src/VirtualDisplay.cpp \
     src/main.cpp

@@ -1,8 +1,9 @@
-service vncflinger /system/bin/vncflinger -rfbunixpath /dev/socket/vncflinger 
+service vncflinger /system/bin/vncflinger -rfbunixpath /dev/socket/vncflinger  -SecurityTypes=None 
     class late_start
     disabled
     user system
     group system input inet readproc
+    socket vncflinger stream 0666 root system
 
 on property:persist.vnc.enable=true
     start vncflinger

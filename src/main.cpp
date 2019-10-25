@@ -4,6 +4,7 @@
 #include <fcntl.h>
 
 #include "AndroidDesktop.h"
+#include "AndroidSocket.h"
 
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
@@ -11,7 +12,6 @@
 
 #include <network/Socket.h>
 #include <network/TcpSocket.h>
-#include <network/UnixSocket.h>
 #include <rfb/Configuration.h>
 #include <rfb/LogWriter.h>
 #include <rfb/Logger_android.h>
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
         rfb::VNCServerST server("vncflinger", desktop.get());
 
         if (rfbunixpath.getValueStr()[0] != '\0') {
-            listeners.push_back(new network::UnixListener(rfbunixpath, rfbunixmode));
+            listeners.push_back(new AndroidListener("vncflinger"));
             ALOGI("Listening on %s (mode %04o)", (const char*)rfbunixpath, (int)rfbunixmode);
         } else {
             if (localhostOnly) {
