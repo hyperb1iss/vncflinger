@@ -15,3 +15,6 @@ binder_call(vncflinger, surfaceflinger);
 
 # buffer callbacks
 binder_call(surfaceflinger, vncflinger);
+
+# socket
+allow vncflinger rootfs:lnk_file getattr;
