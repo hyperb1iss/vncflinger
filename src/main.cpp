@@ -18,11 +18,19 @@
 #include <rfb/VNCServerST.h>
 #include <rfb/util.h>
 
+#include <cutils/properties.h>
+
+
 using namespace vncflinger;
 using namespace android;
 
 static char* gProgramName;
 static bool gCaughtSignal = false;
+static char gSerialNo[PROPERTY_VALUE_MAX];
+
+#ifndef DESKTOP_NAME
+#define DESKTOP_NAME "VNCFlinger"
+#endif
 
 static rfb::IntParameter rfbport("rfbport", "TCP port to listen for RFB protocol", 5900);
 static rfb::BoolParameter localhostOnly("localhost", "Only allow connections from localhost", false);
@@ -54,6 +62,10 @@ int main(int argc, char** argv) {
     rfb::LogWriter::setLogParams("*:android:30");
 
     gProgramName = argv[0];
+    property_get("ro.serialno", gSerialNo, "");
+    std::string desktopName = DESKTOP_NAME;
+    desktopName += " @ ";
+    desktopName += (const char *)gSerialNo;
 
     rfb::Configuration::enableServerParams();
 
@@ -84,7 +96,7 @@ int main(int argc, char** argv) {
 
     try {
         sp<AndroidDesktop> desktop = new AndroidDesktop();
-        rfb::VNCServerST server("vncflinger", desktop.get());
+        rfb::VNCServerST server(desktopName.c_str(), desktop.get());
 
         if (rfbunixpath.getValueStr()[0] != '\0') {
             listeners.push_back(new AndroidListener("vncflinger"));

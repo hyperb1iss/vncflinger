@@ -31,7 +31,7 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_STATIC_LIBRARIES += \
     libtigervnc
 
-LOCAL_CFLAGS := -DVNCFLINGER_VERSION="0.1"
+LOCAL_CFLAGS := -DVNCFLINGER_VERSION="1.0"
 LOCAL_CFLAGS += -Ofast -Werror -std=c++11 -fexceptions
 
 #LOCAL_CFLAGS += -DLOG_NDEBUG=0
@@ -42,5 +42,10 @@ LOCAL_INIT_RC := etc/vncflinger.rc
 LOCAL_MODULE := vncflinger
 
 LOCAL_MODULE_TAGS := optional
+
+# Mason product builds only
+ifneq ($(VNCFLINGER_DESKTOP_NAME),)
+	LOCAL_CFLAGS += -DDESKTOP_NAME=\"$(VNCFLINGER_DESKTOP_NAME)\"
+endif
 
 include $(BUILD_EXECUTABLE)
