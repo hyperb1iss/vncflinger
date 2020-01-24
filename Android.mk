@@ -34,7 +34,7 @@ LOCAL_STATIC_LIBRARIES += \
 LOCAL_CFLAGS := -DVNCFLINGER_VERSION="0.1"
 LOCAL_CFLAGS += -Ofast -Werror -std=c++11 -fexceptions
 
-LOCAL_CFLAGS += -DLOG_NDEBUG=0
+#LOCAL_CFLAGS += -DLOG_NDEBUG=0
 #LOCAL_CXX := /usr/bin/include-what-you-use
 
 LOCAL_INIT_RC := etc/vncflinger.rc
