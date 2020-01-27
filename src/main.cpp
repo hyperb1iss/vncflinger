@@ -2,6 +2,7 @@
 #include <utils/Log.h>
 
 #include <fcntl.h>
+#include <inttypes.h>
 
 #include "AndroidDesktop.h"
 #include "AndroidSocket.h"
@@ -193,7 +194,7 @@ int main(int argc, char** argv) {
             uint64_t eventVal;
             int status = read(eventFd, &eventVal, sizeof(eventVal));
             if (status > 0 && eventVal > 0) {
-                ALOGV("status=%d eventval=%lu", status, eventVal);
+                ALOGV("status=%d eventval=%" PRIu64, status, eventVal);
                 desktop->processFrames();
             }
 

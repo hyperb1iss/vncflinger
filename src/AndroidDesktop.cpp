@@ -2,6 +2,7 @@
 #include <utils/Log.h>
 
 #include <fcntl.h>
+#include <inttypes.h>
 #include <sys/eventfd.h>
 
 #include <gui/ISurfaceComposer.h>
@@ -78,7 +79,7 @@ void AndroidDesktop::processFrames() {
     }
 
     mFrameNumber = imgBuffer.frameNumber;
-    ALOGV("processFrame: [%lu] format: %x (%dx%d, stride=%d)", mFrameNumber, imgBuffer.format,
+    ALOGV("processFrame: [%" PRIu64 "] format: %x (%dx%d, stride=%d)", mFrameNumber, imgBuffer.format,
           imgBuffer.width, imgBuffer.height, imgBuffer.stride);
 
     // we don't know if there was a stride change until we get
@@ -131,7 +132,7 @@ unsigned int AndroidDesktop::setScreenLayout(int reqWidth, int reqHeight,
 
 // cpuconsumer frame listener, called from binder thread
 void AndroidDesktop::onFrameAvailable(const BufferItem& item) {
-    ALOGV("onFrameAvailable: [%lu] mTimestamp=%ld", item.mFrameNumber, item.mTimestamp);
+    ALOGV("onFrameAvailable: [%" PRIu64 "] mTimestamp=%" PRId64, item.mFrameNumber, item.mTimestamp);
 
     notify();
 }
