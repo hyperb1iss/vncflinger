@@ -2,7 +2,7 @@
 #
 # update-headers - Updates the header comment in source files
 # Copyright (C) 2013  Lorenzo Villani
-# Updated for Python3 by Steve Kondik (part of UChroma)
+# Updated for Python3 by Stefanie Kondik (part of UChroma)
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
